@@ -86,7 +86,7 @@ bool FFmpegVideoDecoder::IsCodecSupported(VideoCodec codec) {
 }
 
 FFmpegVideoDecoder::FFmpegVideoDecoder(MediaLog* media_log)
-    : media_log_(media_log), state_(kUninitialized), decode_nalus_(false) {
+    : media_log_(media_log), state_(kUninitialized), decode_nalus_(false), timestamp_map_(128) {
   DVLOG(1) << __func__;
   thread_checker_.DetachFromThread();
 }
@@ -183,7 +183,6 @@ int FFmpegVideoDecoder::GetVideoBuffer(struct AVCodecContext* codec_context,
   frame->width = coded_size.width();
   frame->height = coded_size.height();
   frame->format = codec_context->pix_fmt;
-  frame->reordered_opaque = codec_context->reordered_opaque;
 
   // Now create an AVBufferRef for the data just allocated. It will own the
   // reference to the VideoFrame object.
@@ -318,8 +317,10 @@ bool FFmpegVideoDecoder::FFmpegDecode(const DecoderBuffer& buffer) {
     DCHECK(packet.data);
     DCHECK_GT(packet.size, 0);
 
-    // Let FFmpeg handle presentation timestamp reordering.
-    codec_context_->reordered_opaque = buffer.timestamp().InMicroseconds();
+    const int64_t timestamp = buffer.timestamp().InMicroseconds();
+    const TimestampId timestamp_id = timestamp_id_generator_.GenerateNextId();
+    timestamp_map_.Put(timestamp_id, timestamp);
+    packet.opaque = reinterpret_cast<void*>(timestamp_id.GetUnsafeValue());
   }
 
   switch (decoding_loop_->DecodePacket(
@@ -358,8 +359,13 @@ bool FFmpegVideoDecoder::OnNewFrame(AVFrame* frame) {
 
   scoped_refptr<VideoFrame> video_frame =
       reinterpret_cast<VideoFrame*>(av_buffer_get_opaque(frame->buf[0]));
+  const auto ts_id = TimestampId(reinterpret_cast<size_t>(frame->opaque));
+  const auto ts_lookup = timestamp_map_.Get(ts_id);
+  if (ts_lookup == timestamp_map_.end()) {
+    return false;
+  }
   video_frame->set_timestamp(
-      base::TimeDelta::FromMicroseconds(frame->reordered_opaque));
+      base::TimeDelta::FromMicroseconds(std::get<1>(*ts_lookup)));
   video_frame->metadata()->power_efficient = false;
   output_cb_.Run(video_frame);
   return true;
@@ -385,8 +391,10 @@ bool FFmpegVideoDecoder::ConfigureDecoder(const VideoDecoderConfig& config,
   codec_context_->thread_count = GetFFmpegVideoDecoderThreadCount(config);
   codec_context_->thread_type =
       FF_THREAD_SLICE | (low_delay ? 0 : FF_THREAD_FRAME);
+
   codec_context_->opaque = this;
   codec_context_->get_buffer2 = GetVideoBufferImpl;
+  codec_context_->flags |= AV_CODEC_FLAG_COPY_OPAQUE;
 
   if (decode_nalus_)
     codec_context_->flags2 |= AV_CODEC_FLAG2_CHUNKS;
