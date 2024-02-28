@@ -725,8 +725,7 @@
       "os": {
         "type": "linux"
       },
-      "gl_vendor": "ARM.*",
-      "gl_renderer": ".*Mali-4.*",
+      "gl_renderer": ".*Mali-?4.*",
       "features": [
         "disable_gl_rgb_format"
       ]
