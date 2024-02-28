@@ -281,7 +281,17 @@ static constexpr const auto KeyTbl = qMakeArray(
         Xkb2Qt<XKB_KEY_dead_aboveverticalline,  Qt::Key_Dead_Aboveverticalline>,
         Xkb2Qt<XKB_KEY_dead_belowverticalline,  Qt::Key_Dead_Belowverticalline>,
         Xkb2Qt<XKB_KEY_dead_longsolidusoverlay, Qt::Key_Dead_Longsolidusoverlay>,
-#endif
+#else
+        // These were removed in libxkbcommon 1.6.0
+        // XK_dead_lowline
+        Xkb2Qt<0xfe90,                          Qt::Key_Dead_Lowline>,
+        // XK_dead_aboveverticalline
+        Xkb2Qt<0xfe91,                          Qt::Key_Dead_Aboveverticalline>,
+        // XK_dead_belowverticalline
+        Xkb2Qt<0xfe92,                          Qt::Key_Dead_Belowverticalline>,
+        // XK_dead_longsolidusoverlay
+        Xkb2Qt<0xfe93,                          Qt::Key_Dead_Longsolidusoverlay>,
+#endif /* XKB_KEY_dead_lowline */
 
         // Special keys from X.org - This include multimedia keys,
         // wireless/bluetooth/uwb keys, special launcher keys, etc.
