@@ -181,6 +181,11 @@
 #define WTF_CPU_LOONGARCH64 1
 #endif
 
+/* CPU(RISCV64) - RISCV64 */
+#if defined(__riscv) && defined(__riscv_xlen) && __riscv_xlen == 64
+#define WTF_CPU_RISCV64 1
+#endif
+
 /* CPU(ARM64) - Apple */
 #if (defined(__arm64__) && defined(__APPLE__)) || defined(__aarch64__)
 #define WTF_CPU_ARM64 1
@@ -713,7 +718,8 @@
     || CPU(LOONGARCH64) \
     || CPU(MIPS64) \
     || CPU(PPC64) \
-    || CPU(PPC64LE)
+    || CPU(PPC64LE) \
+    || CPU(RISCV64)
 #define USE_JSVALUE64 1
 #else
 #define USE_JSVALUE32_64 1
