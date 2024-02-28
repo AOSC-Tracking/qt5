@@ -226,6 +226,11 @@
 #define WTF_CPU_SPARC 1
 #endif
 
+/* CPU(3A5000) */
+#if defined(__loongarch64)
+#define WTF_CPU_LA64 1
+#endif
+
 /* CPU(X86) - i386 / x86 32-bit */
 #if   defined(__i386__) \
     || defined(i386)     \
@@ -958,7 +963,7 @@
 #endif
 
 #if !defined(WTF_USE_JSVALUE64) && !defined(WTF_USE_JSVALUE32) && !defined(WTF_USE_JSVALUE32_64)
-#if (CPU(X86_64) && !CPU(X32) && (OS(UNIX) || OS(WINDOWS) || OS(SOLARIS) || OS(HPUX))) || (CPU(IA64) && !CPU(IA64_32)) || CPU(ALPHA) || CPU(AIX64) || CPU(SPARC64) || CPU(MIPS64) || CPU(AARCH64) || CPU(RISCV64)
+#if (CPU(X86_64) && !CPU(X32) && (OS(UNIX) || OS(WINDOWS) || OS(SOLARIS) || OS(HPUX))) || (CPU(IA64) && !CPU(IA64_32)) || CPU(ALPHA) || CPU(AIX64) || CPU(SPARC64) || CPU(MIPS64) || CPU(AARCH64) || CPU(RISCV64) || defined(__loongarch64)
 #define WTF_USE_JSVALUE64 1
 #elif CPU(ARM) || CPU(PPC64) || CPU(RISCV32)
 #define WTF_USE_JSVALUE32 1
@@ -976,7 +981,7 @@ on MinGW. See https://bugs.webkit.org/show_bug.cgi?id=29268 */
 #endif
 
 /* Disable JIT on x32 */
-#if CPU(X32)
+#if CPU(X32) || defined(__loongarch64)
 #define ENABLE_JIT 0
 #endif
 
