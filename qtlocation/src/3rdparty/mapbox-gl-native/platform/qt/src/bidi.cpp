@@ -3,6 +3,7 @@
 #include <mbgl/text/bidi.hpp>
 
 #include <QString>
+#include <stdexcept>
 
 namespace mbgl {
 
