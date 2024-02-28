@@ -176,6 +176,11 @@
 #define WTF_CPU_X86_SSE2 1
 #endif
 
+/* CPU(LOONGARCH64) - LOONGARCH64 */
+#if defined(__loongarch64)
+#define WTF_CPU_LOONGARCH64 1
+#endif
+
 /* CPU(ARM64) - Apple */
 #if (defined(__arm64__) && defined(__APPLE__)) || defined(__aarch64__)
 #define WTF_CPU_ARM64 1
@@ -579,7 +584,7 @@
 #define HAVE_APP_LINKS 1
 #endif
 
-#if CPU(ARM64)
+#if CPU(ARM64) || CPU(LOONGARCH64)
 #define ENABLE_JIT_CONSTANT_BLINDING 0
 #endif
 
@@ -705,6 +710,7 @@
     || CPU(ALPHA) \
     || CPU(ARM64) \
     || CPU(S390X) \
+    || CPU(LOONGARCH64) \
     || CPU(MIPS64) \
     || CPU(PPC64) \
     || CPU(PPC64LE)
