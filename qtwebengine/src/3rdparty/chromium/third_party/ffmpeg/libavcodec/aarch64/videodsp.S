@@ -23,6 +23,8 @@ function ff_prefetch_aarch64, export=1
         prfm            pldl1strm, [x0]
         prfm            pldl1strm, [x0,  x1]
         add             x0,  x0,  x1,  lsl #1
-        b.gt            X(ff_prefetch_aarch64)
+        b.le            1f
+        b               X(ff_prefetch_aarch64)
+      1:
         ret
 endfunc
