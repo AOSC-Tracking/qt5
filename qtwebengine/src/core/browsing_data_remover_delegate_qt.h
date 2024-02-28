@@ -42,6 +42,8 @@
 
 #include "content/public/browser/browsing_data_remover_delegate.h"
 
+#include <cstdint>
+
 namespace QtWebEngineCore {
 
 class BrowsingDataRemoverDelegateQt : public content::BrowsingDataRemoverDelegate {

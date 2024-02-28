@@ -4,6 +4,10 @@
 
 #include "cc/trees/target_property.h"
 
+#include <cstdint>
+
+#include <cstdint>
+
 namespace cc {
 
 static_assert(TargetProperty::LAST_TARGET_PROPERTY < kMaxTargetPropertyIndex,

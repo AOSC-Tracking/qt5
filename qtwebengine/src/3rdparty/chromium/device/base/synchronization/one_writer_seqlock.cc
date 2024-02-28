@@ -4,6 +4,8 @@
 
 #include "device/base/synchronization/one_writer_seqlock.h"
 
+#include <cstdint>
+
 namespace device {
 
 OneWriterSeqLock::OneWriterSeqLock() : sequence_(0) {}

@@ -5,6 +5,7 @@
 #ifndef UI_GL_GL_SURFACE_GLX_H_
 #define UI_GL_GL_SURFACE_GLX_H_
 
+#include <cstdint>
 #include <stdint.h>
 
 #include <memory>

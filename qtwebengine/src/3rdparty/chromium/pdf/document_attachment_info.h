@@ -7,6 +7,8 @@
 
 #include "base/strings/string16.h"
 
+#include <cstdint>
+
 namespace chrome_pdf {
 
 struct DocumentAttachmentInfo {

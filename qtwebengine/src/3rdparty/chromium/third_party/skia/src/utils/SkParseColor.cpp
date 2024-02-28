@@ -11,6 +11,10 @@
 #include <algorithm> // std::lower_bound
 #include <iterator>
 
+#include <string.h>
+#include <algorithm>
+#include <iterator>
+
 static constexpr const char* gColorNames[] = {
     "aliceblue",
     "antiquewhite",

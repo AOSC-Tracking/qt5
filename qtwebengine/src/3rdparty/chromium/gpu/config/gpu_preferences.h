@@ -5,6 +5,7 @@
 #ifndef GPU_CONFIG_GPU_PREFERENCES_H_
 #define GPU_CONFIG_GPU_PREFERENCES_H_
 
+#include <cstdint>
 #include <stddef.h>
 #include <string>
 #include <vector>

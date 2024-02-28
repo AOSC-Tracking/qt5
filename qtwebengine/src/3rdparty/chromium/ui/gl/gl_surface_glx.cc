@@ -4,6 +4,7 @@
 
 #include "ui/gl/gl_surface_glx.h"
 
+#include <cstdint>
 #include <utility>
 
 #include "base/bind.h"

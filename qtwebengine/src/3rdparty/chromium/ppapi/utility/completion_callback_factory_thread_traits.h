@@ -38,6 +38,10 @@ namespace pp {
 /// As a further optimization, we can add support for this later.
 class ThreadSafeThreadTraits {
  public:
+
+  typedef pp::Lock Lock;
+  typedef pp::AutoLock AutoLock;
+
   class RefCount {
    public:
     /// Default constructor. In debug mode, this checks that the object is being
@@ -67,8 +71,6 @@ class ThreadSafeThreadTraits {
     int32_t ref_;
   };
 
-  typedef pp::Lock Lock;
-  typedef pp::AutoLock AutoLock;
 };
 
 /// The non-thread-safe version of thread traits. Using this class as the

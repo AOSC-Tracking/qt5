@@ -15,6 +15,7 @@
 #    include "absl/container/flat_hash_map.h"
 #endif  // defined(ANGLE_USE_ABSEIL)
 
+#include <cstdint>
 #include <climits>
 #include <cstdarg>
 #include <cstddef>

@@ -21,6 +21,8 @@
 #include "perfetto/trace_processor/status.h"
 #include "src/trace_processor/trace_blob_view.h"
 
+#include <cstdint>
+
 namespace perfetto {
 
 namespace protos {
