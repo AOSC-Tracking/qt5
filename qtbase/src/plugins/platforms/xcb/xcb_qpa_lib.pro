@@ -1,5 +1,5 @@
 TARGET     = QtXcbQpa
-CONFIG += no_module_headers internal_module
+CONFIG += no_module_headers internal_module egl
 DEFINES += QT_NO_FOREACH
 
 QT += \

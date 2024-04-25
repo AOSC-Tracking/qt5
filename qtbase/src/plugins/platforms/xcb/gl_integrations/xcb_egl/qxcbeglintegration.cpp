@@ -98,6 +98,11 @@ QXcbWindow *QXcbEglIntegration::createWindow(QWindow *window) const
 
 QPlatformOpenGLContext *QXcbEglIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
 {
+    QSurfaceFormat fmt = context->format();
+    if (fmt.renderableType() == QSurfaceFormat::DefaultRenderableType) {
+        fmt.setRenderableType(DetectOpenGLCapability::instance()->getOpenGLType());
+        context->setFormat(fmt);
+    }
     QXcbScreen *screen = static_cast<QXcbScreen *>(context->screen()->handle());
     QXcbEglContext *platformContext = new QXcbEglContext(screen->surfaceFormatFor(context->format()),
                                                          context->shareHandle(),
