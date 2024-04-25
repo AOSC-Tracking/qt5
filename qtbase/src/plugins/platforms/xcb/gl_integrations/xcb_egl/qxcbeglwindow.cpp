@@ -59,8 +59,14 @@ QXcbEglWindow::~QXcbEglWindow()
     eglDestroySurface(m_glIntegration->eglDisplay(), m_surface);
 }
 
-void QXcbEglWindow::resolveFormat(const QSurfaceFormat &format)
+void QXcbEglWindow::resolveFormat(const QSurfaceFormat &f)
 {
+    QSurfaceFormat format = f;
+
+    if (format.renderableType() == QSurfaceFormat::DefaultRenderableType) {
+        format.setRenderableType(DetectOpenGLCapability::instance()->getOpenGLType());
+    }
+
     m_config = q_configFromGLFormat(m_glIntegration->eglDisplay(), format);
     m_format = q_glFormatFromConfig(m_glIntegration->eglDisplay(), m_config, format);
 }

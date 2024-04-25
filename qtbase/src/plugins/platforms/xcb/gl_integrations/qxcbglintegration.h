@@ -52,6 +52,26 @@ class QXcbNativeInterfaceHandler;
 
 Q_XCB_EXPORT Q_DECLARE_LOGGING_CATEGORY(lcQpaGl)
 
+class Q_XCB_EXPORT DetectOpenGLCapability
+{
+public:
+    static DetectOpenGLCapability* instance()
+    {
+        static DetectOpenGLCapability openglCapability;
+        return &openglCapability;
+    }
+    QSurfaceFormat::RenderableType getOpenGLType()
+    {
+        return m_renderableType;
+    }
+private:
+    DetectOpenGLCapability();
+
+    int EGLtestGLESCapability();
+    int GLXtestOpenGLCapability();
+    QSurfaceFormat::RenderableType m_renderableType;
+};
+
 class Q_XCB_EXPORT QXcbGlIntegration
 {
 public:

@@ -232,6 +232,10 @@ QGLXContext::QGLXContext(QXcbScreen *screen, const QSurfaceFormat &format, QPlat
     , m_getGraphicsResetStatus(nullptr)
     , m_lost(false)
 {
+   if (m_format.renderableType() == QSurfaceFormat::DefaultRenderableType) {
+       m_format.setRenderableType(DetectOpenGLCapability::instance()->getOpenGLType());
+   }
+
     if (nativeHandle.isNull())
         init(screen, share);
     else
