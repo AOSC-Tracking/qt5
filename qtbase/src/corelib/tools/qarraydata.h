@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2022 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -42,7 +42,6 @@
 
 #include <QtCore/qrefcount.h>
 #include <string.h>
-#include <cstdint>
 
 QT_BEGIN_NAMESPACE
 
@@ -57,16 +56,16 @@ struct Q_CORE_EXPORT QArrayData
 
     void *data()
     {
-        Q_ASSERT(size == 0
-                || offset < 0 || size_t(offset) >= sizeof(QArrayData));
-        return reinterpret_cast<void *> (reinterpret_cast<uintptr_t>(this) + offset);
+        Q_ASSERT(size == 0 || offset < 0 || size_t(offset) >= sizeof(QArrayData));
+        const quintptr self = reinterpret_cast<qintptr>(this);
+        return reinterpret_cast<void *>(self + offset);
     }
 
     const void *data() const
     {
-        Q_ASSERT(size == 0
-                || offset < 0 || size_t(offset) >= sizeof(QArrayData));
-        return reinterpret_cast<void *> (reinterpret_cast<uintptr_t>(this) + offset);
+        Q_ASSERT(size == 0 || offset < 0 || size_t(offset) >= sizeof(QArrayData));
+        const quintptr self = reinterpret_cast<qintptr>(this);
+        return reinterpret_cast<const void *>(self + offset);
     }
 
     // This refers to array data mutability, not "header data" represented by

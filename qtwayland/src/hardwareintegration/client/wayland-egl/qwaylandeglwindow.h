@@ -80,10 +80,7 @@ private:
     QWaylandEglClientBufferIntegration *m_clientBufferIntegration = nullptr;
     struct wl_egl_window *m_waylandEglWindow = nullptr;
 
-    const QWaylandWindow *m_parentWindow = nullptr;
-
     EGLSurface m_eglSurface = EGL_NO_SURFACE;
-    EGLConfig m_eglConfig;
     mutable bool m_resize = false;
     mutable QOpenGLFramebufferObject *m_contentFBO = nullptr;
 

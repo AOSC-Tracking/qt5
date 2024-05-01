@@ -87,6 +87,7 @@ void QPaintedTextureImagePrivate::repaint()
     {
         m_image.reset(new QImage(m_imageSize, QImage::Format_RGBA8888));
         m_image->setDevicePixelRatio(m_devicePixelRatio);
+        m_image->fill(Qt::transparent);
     }
 
     QPainter painter(m_image.data());
@@ -263,4 +264,6 @@ bool QPaintedTextureImageDataGenerator::operator ==(const QTextureImageDataGener
 } // namespace Qt3DRender
 
 QT_END_NAMESPACE
+
+#include "moc_qpaintedtextureimage.cpp"
 

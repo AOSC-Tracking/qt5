@@ -1180,6 +1180,9 @@ void Renderer::sendShaderChangesToFrontend(Qt3DCore::QAspectManager *manager)
     const std::vector<HShader> &activeShaders = m_nodesManager->shaderManager()->activeHandles();
     for (const HShader &handle :activeShaders) {
         Shader *s = m_nodesManager->shaderManager()->data(handle);
+        if (!s)
+            continue;
+
         if (s->requiresFrontendSync()) {
             QShaderProgram *frontend = static_cast<decltype(frontend)>(manager->lookupNode(s->peerId()));
             // Could happen as a backend shader might live beyong the frontend
@@ -1952,7 +1955,7 @@ QVector<Qt3DCore::QAspectJobPtr> Renderer::renderBinJobs()
                 m_updatedDisableSubtreeEnablers.push_back(node->peerId());
         }
 
-        int idealThreadCount = QThreadPooler::maxThreadCount();
+        int idealThreadCount = Qt3DCore::QAspectJobManager::idealThreadCount();
 
         const int fgBranchCount = m_frameGraphLeaves.size();
         if (fgBranchCount > 1) {

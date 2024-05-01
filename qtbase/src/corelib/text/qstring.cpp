@@ -647,6 +647,8 @@ void qt_from_latin1(ushort *dst, const char *str, size_t size) noexcept
 #  endif
 #endif
 #if defined(__mips_dsp)
+    static_assert(sizeof(qsizetype) == sizeof(int),
+                  "oops, the assembler implementation needs to be called in a loop");
     if (size > 20)
         qt_fromlatin1_mips_asm_unroll8(dst, str, size);
     else
@@ -802,6 +804,8 @@ static void qt_to_latin1_internal(uchar *dst, const ushort *src, qsizetype lengt
     }
 #endif
 #if defined(__mips_dsp)
+    static_assert(sizeof(qsizetype) == sizeof(int),
+                  "oops, the assembler implementation needs to be called in a loop");
     qt_toLatin1_mips_dsp_asm(dst, src, length);
 #else
     while (length--) {
@@ -7184,13 +7188,17 @@ QString QString::vasprintf(const char *cformat, va_list ap)
                 if (length_mod == lm_l) {
                     const ushort *buff = va_arg(ap, const ushort*);
                     const ushort *ch = buff;
-                    while (*ch != 0)
+                    while (precision != 0 && *ch != 0) {
                         ++ch;
+                        --precision;
+                    }
                     subst.setUtf16(buff, ch - buff);
-                } else
+                } else if (precision == -1) {
                     subst = QString::fromUtf8(va_arg(ap, const char*));
-                if (precision != -1)
-                    subst.truncate(precision);
+                } else {
+                    const char *buff = va_arg(ap, const char*);
+                    subst = QString::fromUtf8(buff, qstrnlen(buff, precision));
+                }
                 ++c;
                 break;
             }
@@ -8231,7 +8239,7 @@ QVector<QStringRef> QString::splitRef(const QRegularExpression &re, SplitBehavio
     \value NormalizationForm_KC  Compatibility Decomposition followed by Canonical Composition
 
     \sa normalized(),
-        {http://www.unicode.org/reports/tr15/}{Unicode Standard Annex #15}
+        {https://www.unicode.org/reports/tr15/}{Unicode Standard Annex #15}
 */
 
 /*!

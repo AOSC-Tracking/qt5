@@ -45,6 +45,7 @@
 #include "qcocoacursor.h"
 
 #include <qpa/qplatformintegration.h>
+#include <QtCore/private/qcore_mac_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -64,8 +65,8 @@ public:
     QImage::Format format() const override { return m_format; }
     qreal devicePixelRatio() const override { return m_devicePixelRatio; }
     QSizeF physicalSize() const override { return m_physicalSize; }
-    QDpi logicalDpi() const override { return m_logicalDpi; }
-    QDpi logicalBaseDpi() const override { return m_logicalDpi; }
+    QDpi logicalDpi() const override { return QDpi(72, 72); }
+    QDpi logicalBaseDpi() const override { return QDpi(72, 72); }
     qreal refreshRate() const override { return m_refreshRate; }
     QString name() const override { return m_name; }
     QPlatformCursor *cursor() const override { return m_cursor; }
@@ -96,8 +97,8 @@ private:
     static void updateScreens();
     static void cleanupScreens();
 
-    static bool updateScreensIfNeeded();
-    static NSArray *s_screenConfigurationBeforeUpdate;
+    static QMacNotificationObserver s_screenParameterObserver;
+    static CGDisplayReconfigurationCallBack s_displayReconfigurationCallBack;
 
     static void add(CGDirectDisplayID displayId);
     QCocoaScreen(CGDirectDisplayID displayId);
@@ -112,7 +113,6 @@ private:
 
     QRect m_geometry;
     QRect m_availableGeometry;
-    QDpi m_logicalDpi;
     qreal m_refreshRate = 0;
     int m_depth = 0;
     QString m_name;

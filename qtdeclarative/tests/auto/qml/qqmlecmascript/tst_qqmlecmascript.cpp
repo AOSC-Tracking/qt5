@@ -240,6 +240,8 @@ private slots:
     void function();
     void topLevelGeneratorFunction();
     void generatorCrashNewProperty();
+    void generatorCallsGC();
+    void noYieldInInnerFunction();
     void qtbug_10696();
     void qtbug_11606();
     void qtbug_11600();
@@ -386,6 +388,9 @@ private slots:
     void proxyIteration();
     void proxyHandlerTraps();
     void gcCrashRegressionTest();
+    void functionAsDefaultArgument();
+
+    void internalClassParentGc();
 
 private:
 //    static void propertyVarWeakRefCallback(v8::Persistent<v8::Value> object, void* parameter);
@@ -6505,6 +6510,28 @@ void tst_qqmlecmascript::generatorCrashNewProperty()
     QCOMPARE(o->property("c").toInt(), 42);
 }
 
+void tst_qqmlecmascript::generatorCallsGC()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, testFileUrl("generatorCallsGC.qml"));
+
+    QScopedPointer<QObject> o(component.create()); // should not crash
+    QVERIFY2(o != nullptr, qPrintable(component.errorString()));
+}
+
+void tst_qqmlecmascript::noYieldInInnerFunction()
+{
+    QJSEngine engine;
+    const QString program = R"(
+    function *a() {
+        (function() { yield 1; })();
+    };
+    )";
+    auto result = engine.evaluate(program);
+    QVERIFY(result.isError());
+    QCOMPARE(result.errorType(), QJSValue::SyntaxError);
+}
+
 // Test the "Qt.include" method
 void tst_qqmlecmascript::include()
 {
@@ -9359,6 +9386,24 @@ void tst_qqmlecmascript::proxyHandlerTraps()
     QJSEngine engine;
     QJSValue value = engine.evaluate(expression);
     QVERIFY(value.isString() && value.toString() == QStringLiteral("SUCCESS"));
+}
+
+void tst_qqmlecmascript::functionAsDefaultArgument()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, testFileUrl("functionAsDefaultArgument.qml"));
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY(root);
+    QCOMPARE(root->objectName(), "didRun");
+}
+
+void tst_qqmlecmascript::internalClassParentGc()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, testFileUrl("internalClassParentGc.qml"));
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY(root);
+    QCOMPARE(root->objectName(), "3");
 }
 
 QTEST_MAIN(tst_qqmlecmascript)

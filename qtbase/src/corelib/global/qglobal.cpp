@@ -97,6 +97,10 @@
 #  include <private/qcore_mac_p.h>
 #endif
 
+#if defined(Q_OS_MACOS)
+#include <QtCore/qversionnumber.h>
+#endif
+
 #ifdef Q_OS_UNIX
 #include <sys/utsname.h>
 #include <private/qcore_unix_p.h>
@@ -499,6 +503,14 @@ Q_STATIC_ASSERT((std::is_same<qsizetype, qptrdiff>::value));
     \since 4.2
 
     Returns \c true if the flag \a flag is set, otherwise \c false.
+
+    \note if \a flag contains multiple bits set to 1 (for instance, if
+    it's an enumerator equal to the bitwise-OR of other enumerators)
+    then this function will return \c true if and only if all the bits
+    are set in this flags object. On the other hand, if \a flag contains
+    no bits set to 1 (that is, its value as a integer is 0), then this
+    function will return \c true if and only if this flags object also
+    has no bits set to 1.
 */
 
 /*!
@@ -2125,6 +2137,15 @@ QT_WARNING_POP
 static const char *osVer_helper(QOperatingSystemVersion version = QOperatingSystemVersion::current())
 {
 #ifdef Q_OS_MACOS
+    if (version.majorVersion() == 13)
+        return "Ventura";
+    if (version.majorVersion() == 12)
+        return "Monterey";
+    // Compare against predefined constant to handle 10.16/11.0
+    if (QVersionNumber(QOperatingSystemVersion::MacOSBigSur.majorVersion(),
+            QOperatingSystemVersion::MacOSBigSur.minorVersion(), QOperatingSystemVersion::MacOSBigSur.microVersion()).isPrefixOf(
+                QVersionNumber(version.majorVersion(), version.minorVersion(), version.microVersion())))
+        return "Big Sur";
     if (version.majorVersion() == 10) {
         switch (version.minorVersion()) {
         case 9:
@@ -2139,13 +2160,15 @@ static const char *osVer_helper(QOperatingSystemVersion version = QOperatingSyst
             return "High Sierra";
         case 14:
             return "Mojave";
+        case 15:
+            return "Catalina";
         }
     }
     // unknown, future version
 #else
     Q_UNUSED(version);
 #endif
-    return 0;
+    return nullptr;
 }
 #endif
 
@@ -2256,11 +2279,21 @@ static const char *osVer_helper(QOperatingSystemVersion version = QOperatingSyst
     case Q_WINVER(6, 3):
         return workstation ? "8.1" : "Server 2012 R2";
     case Q_WINVER(10, 0):
-        return workstation ? "10" : "Server 2016";
+        if (workstation) {
+            if (osver.dwBuildNumber >= 22000)
+                return "11";
+            return "10";
+        }
+        // else: Server
+        if (osver.dwBuildNumber >= 20348)
+            return "Server 2022";
+        if (osver.dwBuildNumber >= 17763)
+            return "Server 2019";
+        return "Server 2016";
     }
 #undef Q_WINVER
     // unknown, future version
-    return 0;
+    return nullptr;
 }
 
 #endif
@@ -3059,7 +3092,8 @@ QByteArray QSysInfo::machineUniqueId()
 {
 #if defined(Q_OS_DARWIN) && __has_include(<IOKit/IOKitLib.h>)
     char uuid[UuidStringLen + 1];
-    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
+    static const mach_port_t defaultPort = 0; // Effectively kIOMasterPortDefault/kIOMainPortDefault
+    io_service_t service = IOServiceGetMatchingService(defaultPort, IOServiceMatching("IOPlatformExpertDevice"));
     QCFString stringRef = (CFStringRef)IORegistryEntryCreateCFProperty(service, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
     CFStringGetCString(stringRef, uuid, sizeof(uuid), kCFStringEncodingMacRoman);
     return QByteArray(uuid);
@@ -3704,6 +3738,15 @@ bool qEnvironmentVariableIsSet(const char *varName) noexcept
 */
 bool qputenv(const char *varName, const QByteArray& value)
 {
+    // protect against non-NUL-terminated QByteArrays:
+    #define IS_RAW_DATA(d) ((d)->offset != sizeof(QByteArrayData)) // copied from qbytearray.cpp
+    if (IS_RAW_DATA(const_cast<QByteArray&>(value).data_ptr())) {
+        QByteArray copy(value);
+        copy.detach(); // ensures NUL termination
+        return qputenv(varName, copy);
+    }
+    #undef IS_RAW_DATA
+
     const auto locker = qt_scoped_lock(environmentMutex);
 #if defined(Q_CC_MSVC)
     return _putenv_s(varName, value.constData()) == 0;

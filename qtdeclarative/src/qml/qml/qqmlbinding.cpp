@@ -353,7 +353,9 @@ public:
 
     QQmlSourceLocation sourceLocation() const override final
     {
-        return QQmlSourceLocation(m_compilationUnit->fileName(), m_binding->valueLocation.line, m_binding->valueLocation.column);
+        return QQmlSourceLocation(
+                m_compilationUnit->fileName(), m_binding->valueLocation.line(),
+                m_binding->valueLocation.column());
     }
 
 
@@ -532,8 +534,8 @@ QString QQmlBinding::expressionIdentifier() const
 {
     if (auto f = function()) {
         QString url = f->sourceFile();
-        uint lineNumber = f->compiledFunction->location.line;
-        uint columnNumber = f->compiledFunction->location.column;
+        uint lineNumber = f->compiledFunction->location.line();
+        uint columnNumber = f->compiledFunction->location.column();
         return url + QString::asprintf(":%u:%u", lineNumber, columnNumber);
     }
 
@@ -645,7 +647,10 @@ void QQmlBinding::getPropertyData(QQmlPropertyData **propertyData, QQmlPropertyD
         Q_ASSERT(valueTypeMetaObject);
         QMetaProperty vtProp = valueTypeMetaObject->property(m_targetIndex.valueTypeIndex());
         valueTypeData->setFlags(QQmlPropertyData::flagsForProperty(vtProp));
+
+        // valueTypeData is expected to be local here. It must not be shared with other threads.
         valueTypeData->setPropType(vtProp.userType());
+
         valueTypeData->setCoreIndex(m_targetIndex.valueTypeIndex());
     }
 }
@@ -748,7 +753,11 @@ QQmlBinding *QQmlBinding::newBinding(QQmlEnginePrivate *engine, const QQmlProper
     if (property && property->isQObject())
         return new QObjectPointerBinding(engine, property->propType());
 
-    const int type = (property && property->isFullyResolved()) ? property->propType() : QMetaType::UnknownType;
+    // If the property is not resolved at this point, you get a binding of unknown type.
+    // This has been the case for a long time and we keep it like this in Qt5 to be bug-compatible.
+    const int type = (property && property->isResolved())
+            ? property->propType()
+            : QMetaType::UnknownType;
 
     if (type == qMetaTypeId<QQmlBinding *>()) {
         return new QQmlBindingBinding;

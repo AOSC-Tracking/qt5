@@ -125,6 +125,9 @@ QWaylandIntegration::QWaylandIntegration()
 #endif
 
     reconfigureInputContext();
+
+    QWaylandWindow::fixedToplevelPositions =
+            !qEnvironmentVariableIsSet("QT_WAYLAND_DISABLE_FIXED_POSITIONS");
 }
 
 QWaylandIntegration::~QWaylandIntegration()

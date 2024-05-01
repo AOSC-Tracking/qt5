@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2021 The Qt Company Ltd.
-** Copyright (C) 2021 Intel Corporation.
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -372,8 +372,8 @@ public:
     QLEInteger &operator ^=(T i);
     QLEInteger &operator ++();
     QLEInteger &operator --();
-    QLEInteger &operator ++(int);
-    QLEInteger &operator --(int);
+    QLEInteger operator ++(int);
+    QLEInteger operator --(int);
 
     static Q_DECL_CONSTEXPR QLEInteger max();
     static Q_DECL_CONSTEXPR QLEInteger min();
@@ -399,8 +399,8 @@ public:
     QBEInteger &operator ^=(T i);
     QBEInteger &operator ++();
     QBEInteger &operator --();
-    QBEInteger &operator ++(int);
-    QBEInteger &operator --(int);
+    QBEInteger operator ++(int);
+    QBEInteger operator --(int);
 
     static Q_DECL_CONSTEXPR QBEInteger max();
     static Q_DECL_CONSTEXPR QBEInteger min();

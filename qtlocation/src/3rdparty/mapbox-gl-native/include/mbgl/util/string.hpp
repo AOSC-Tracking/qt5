@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 

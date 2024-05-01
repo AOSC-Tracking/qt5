@@ -68,6 +68,7 @@ private slots:
     void touchPassiveGrabbers_data();
     void touchPassiveGrabbers();
     void touchPinchAndMouseMove();
+    void underModalLayer();
 
 private:
     void createView(QScopedPointer<QQuickView> &window, const char *fileName);
@@ -410,6 +411,9 @@ void tst_DragHandler::dragFromMargin() // QTBUG-74966
     QVERIFY(!dragHandler->active());
     QCOMPARE(dragHandler->centroid().scenePosition(), scenePressPos);
     QCOMPARE(dragHandler->centroid().scenePressPosition(), scenePressPos);
+#if QT_CONFIG(cursor)
+    QCOMPARE(window->cursor().shape(), Qt::ArrowCursor);
+#endif
     p1 += QPoint(dragThreshold * 2, 0);
     QTest::mouseMove(window, p1);
     QTRY_VERIFY(dragHandler->active());
@@ -418,9 +422,18 @@ void tst_DragHandler::dragFromMargin() // QTBUG-74966
     QCOMPARE(dragHandler->translation().x(), 0.0); // hmm that's odd
     QCOMPARE(dragHandler->translation().y(), 0.0);
     QCOMPARE(draggableItem->position(), originalPos + QPointF(dragThreshold * 2, 0));
+#if QT_CONFIG(cursor)
+    // The cursor doesn't change until the next event after the handler becomes active.
+    p1 += QPoint(1, 0);
+    QTest::mouseMove(window, p1);
+    QTRY_COMPARE(window->cursor().shape(), Qt::ClosedHandCursor);
+#endif
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, p1);
     QTRY_VERIFY(!dragHandler->active());
     QCOMPARE(dragHandler->centroid().pressedButtons(), Qt::NoButton);
+#if QT_CONFIG(cursor)
+    QTRY_COMPARE(window->cursor().shape(), Qt::ArrowCursor);
+#endif
 }
 
 void tst_DragHandler::snapMode_data()
@@ -809,6 +822,59 @@ void tst_DragHandler::touchPinchAndMouseMove()
         QTest::mouseMove(window, p1);
         QCOMPARE(rectMovedSpy.count(), 0);
     }
+}
+
+class ModalLayer : public QQuickItem {
+public:
+    explicit ModalLayer(QQuickItem* parent = nullptr) : QQuickItem(parent) {
+        this->setAcceptedMouseButtons(Qt::AllButtons);
+        this->setAcceptTouchEvents(true);
+        this->setKeepMouseGrab(true);
+        this->setKeepTouchGrab(true);
+    }
+
+    bool event(QEvent* event) override {
+        switch (event->type()) {
+        case QEvent::KeyPress:
+        case QEvent::MouseMove:
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+        case QEvent::MouseTrackingChange:
+        case QEvent::MouseButtonDblClick:
+        case QEvent::Wheel:
+        case QEvent::TouchBegin:
+        case QEvent::TouchUpdate:
+        case QEvent::TouchCancel:
+        case QEvent::TouchEnd: {
+            qCDebug(lcPointerTests) << "BLOCK!" << event->type();
+            return true;
+        }
+        default: break;
+        }
+        return QQuickItem::event(event);
+    }
+};
+
+void tst_DragHandler::underModalLayer() // QTBUG-78258
+{
+    qmlRegisterType<ModalLayer>("Test", 1, 0, "ModalLayer");
+
+    const int dragThreshold = QGuiApplication::styleHints()->startDragDistance();
+    QScopedPointer<QQuickView> windowPtr;
+    createView(windowPtr, "dragHandlerUnderModalLayer.qml");
+    QQuickView * window = windowPtr.data();
+    QPointer<QQuickDragHandler> dragHandler = window->rootObject()->findChild<QQuickDragHandler*>();
+    QVERIFY(dragHandler);
+
+    QPoint p1(250, 250);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, p1);
+    p1 += QPoint(dragThreshold, dragThreshold);
+    QTest::mouseMove(window, p1);
+    QVERIFY(!dragHandler->active());
+    p1 += QPoint(dragThreshold, dragThreshold);
+    QTest::mouseMove(window, p1);
+    QVERIFY(!dragHandler->active());
+    QTest::mouseRelease(window, Qt::LeftButton);
 }
 
 QTEST_MAIN(tst_DragHandler)

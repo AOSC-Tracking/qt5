@@ -906,7 +906,7 @@ bool QQuickKeysAttached::isConnected(const char *signalName) const
 */
 
 /*!
-    \qmlproperty list<Object> QtQuick::Keys::forwardTo
+    \qmlproperty list<Item> QtQuick::Keys::forwardTo
 
     This property provides a way to forward key presses, key releases, and keyboard input
     coming from input methods to other items. This can be useful when you want
@@ -2327,6 +2327,7 @@ QQuickItem::QQuickItem(QQuickItemPrivate &dd, QQuickItem *parent)
 QQuickItem::~QQuickItem()
 {
     Q_D(QQuickItem);
+    d->inDestructor = true;
 
     if (d->windowRefCount > 1)
         d->windowRefCount = 1; // Make sure window is set to null in next call to derefWindow().
@@ -2399,7 +2400,7 @@ bool QQuickItemPrivate::canAcceptTabFocus(QQuickItem *item)
         return true;
 
 #if QT_CONFIG(accessibility)
-    QAccessible::Role role = QQuickItemPrivate::get(item)->accessibleRole();
+    QAccessible::Role role = QQuickItemPrivate::get(item)->effectiveAccessibleRole();
     if (role == QAccessible::EditableText || role == QAccessible::Table || role == QAccessible::List) {
         return true;
     } else if (role == QAccessible::ComboBox || role == QAccessible::SpinBox) {
@@ -2694,9 +2695,8 @@ void QQuickItem::setParentItem(QQuickItem *parentItem)
 
         const bool wasVisible = isVisible();
         op->removeChild(this);
-        if (wasVisible) {
+        if (wasVisible && !op->inDestructor)
             emit oldParentItem->visibleChildrenChanged();
-        }
     } else if (d->window) {
         QQuickWindowPrivate::get(d->window)->parentlessItems.remove(this);
     }
@@ -2773,8 +2773,9 @@ void QQuickItem::setParentItem(QQuickItem *parentItem)
 
     d->itemChange(ItemParentHasChanged, d->parentItem);
 
-    emit parentChanged(d->parentItem);
-    if (isVisible() && d->parentItem)
+    if (!d->inDestructor)
+        emit parentChanged(d->parentItem);
+    if (isVisible() && d->parentItem && !QQuickItemPrivate::get(d->parentItem)->inDestructor)
         emit d->parentItem->visibleChildrenChanged();
 }
 
@@ -2970,7 +2971,8 @@ void QQuickItemPrivate::removeChild(QQuickItem *child)
 
     itemChange(QQuickItem::ItemChildRemovedChange, child);
 
-    emit q->childrenChanged();
+    if (!inDestructor)
+        emit q->childrenChanged();
 }
 
 void QQuickItemPrivate::refWindow(QQuickWindow *c)
@@ -3199,6 +3201,7 @@ QQuickItemPrivate::QQuickItemPrivate()
     , touchEnabled(false)
 #endif
     , hasCursorHandler(false)
+    , inDestructor(false)
     , dirtyAttributes(0)
     , nextDirtyItem(nullptr)
     , prevDirtyItem(nullptr)
@@ -3722,6 +3725,9 @@ QList<QQuickItem *> QQuickItem::childItems() const
 
   If clipping is enabled, an item will clip its own painting, as well
   as the painting of its children, to its bounding rectangle.
+
+  \note Clipping can affect rendering performance. See \l {Clipping} for more
+  information.
 */
 /*!
   \property QQuickItem::clip
@@ -4545,10 +4551,10 @@ static bool unwrapMapFromToFromItemArgs(QQmlV4Function *args, const QQuickItem *
 }
 
 /*!
-    \qmlmethod object QtQuick::Item::mapFromItem(Item item, real x, real y)
-    \qmlmethod object QtQuick::Item::mapFromItem(Item item, point p)
-    \qmlmethod object QtQuick::Item::mapFromItem(Item item, real x, real y, real width, real height)
-    \qmlmethod object QtQuick::Item::mapFromItem(Item item, rect r)
+    \qmlmethod point QtQuick::Item::mapFromItem(Item item, real x, real y)
+    \qmlmethod point QtQuick::Item::mapFromItem(Item item, point p)
+    \qmlmethod rect QtQuick::Item::mapFromItem(Item item, real x, real y, real width, real height)
+    \qmlmethod rect QtQuick::Item::mapFromItem(Item item, rect r)
 
     Maps the point (\a x, \a y) or rect (\a x, \a y, \a width, \a height), which is in \a
     item's coordinate system, to this item's coordinate system, and returns a \l point or \l rect
@@ -4600,10 +4606,10 @@ QTransform QQuickItem::itemTransform(QQuickItem *other, bool *ok) const
 }
 
 /*!
-    \qmlmethod object QtQuick::Item::mapToItem(Item item, real x, real y)
-    \qmlmethod object QtQuick::Item::mapToItem(Item item, point p)
-    \qmlmethod object QtQuick::Item::mapToItem(Item item, real x, real y, real width, real height)
-    \qmlmethod object QtQuick::Item::mapToItem(Item item, rect r)
+    \qmlmethod point QtQuick::Item::mapToItem(Item item, real x, real y)
+    \qmlmethod point QtQuick::Item::mapToItem(Item item, point p)
+    \qmlmethod rect QtQuick::Item::mapToItem(Item item, real x, real y, real width, real height)
+    \qmlmethod rect QtQuick::Item::mapToItem(Item item, rect r)
 
     Maps the point (\a x, \a y) or rect (\a x, \a y, \a width, \a height), which is in this
     item's coordinate system, to \a item's coordinate system, and returns a \l point or \l rect
@@ -4685,7 +4691,7 @@ static bool unwrapMapFromToFromGlobalArgs(QQmlV4Function *args, const QQuickItem
 
 /*!
     \since 5.7
-    \qmlmethod object QtQuick::Item::mapFromGlobal(real x, real y)
+    \qmlmethod point QtQuick::Item::mapFromGlobal(real x, real y)
 
     Maps the point (\a x, \a y), which is in the global coordinate system, to the
     item's coordinate system, and returns a \l point  matching the mapped coordinate.
@@ -4712,7 +4718,7 @@ void QQuickItem::mapFromGlobal(QQmlV4Function *args) const
 
 /*!
     \since 5.7
-    \qmlmethod object QtQuick::Item::mapToGlobal(real x, real y)
+    \qmlmethod point QtQuick::Item::mapToGlobal(real x, real y)
 
     Maps the point (\a x, \a y), which is in this item's coordinate system, to the
     global coordinate system, and returns a \l point  matching the mapped coordinate.
@@ -4795,14 +4801,24 @@ void QQuickItem::forceActiveFocus()
 
 void QQuickItem::forceActiveFocus(Qt::FocusReason reason)
 {
+    Q_D(QQuickItem);
     setFocus(true, reason);
     QQuickItem *parent = parentItem();
+    QQuickItem *scope = nullptr;
     while (parent) {
         if (parent->flags() & QQuickItem::ItemIsFocusScope) {
             parent->setFocus(true, reason);
+            if (!scope)
+                scope = parent;
         }
         parent = parent->parentItem();
     }
+    // In certain reparenting scenarios, d->focus might be true and the scope
+    // might also have focus, so that setFocus() returns early without actually
+    // acquiring active focus, because it thinks it already has it. In that
+    // case, try to set the DeliveryAgent's active focus. (QTBUG-89736).
+    if (scope && !d->activeFocus && d->window)
+        QQuickWindowPrivate::get(d->window)->setFocusInScope(scope, this, Qt::OtherFocusReason);
 }
 
 /*!
@@ -5112,6 +5128,13 @@ void QQuickItem::componentComplete()
         d->addToDirtyList();
         QQuickWindowPrivate::get(d->window)->dirtyItem(this);
     }
+
+#if QT_CONFIG(accessibility)
+    if (d->isAccessible && d->effectiveVisible) {
+        QAccessibleEvent ev(this, QAccessible::ObjectShow);
+        QAccessible::updateAccessibility(&ev);
+    }
+#endif
 }
 
 QQuickStateGroup *QQuickItemPrivate::_states()
@@ -6098,9 +6121,11 @@ bool QQuickItemPrivate::setEffectiveVisibleRecur(bool newEffectiveVisible)
         QAccessible::updateAccessibility(&ev);
     }
 #endif
-    emit q->visibleChanged();
-    if (childVisibilityChanged)
-        emit q->visibleChildrenChanged();
+    if (!inDestructor) {
+        emit q->visibleChanged();
+        if (childVisibilityChanged)
+            emit q->visibleChildrenChanged();
+    }
 
     return true;    // effective visibility DID change
 }
@@ -6149,6 +6174,15 @@ void QQuickItemPrivate::setEffectiveEnableRecur(QQuickItem *scope, bool newEffec
     }
 
     itemChange(QQuickItem::ItemEnabledHasChanged, effectiveEnable);
+#if QT_CONFIG(accessibility)
+    if (isAccessible) {
+        QAccessible::State changedState;
+        changedState.disabled = true;
+        changedState.focusable = true;
+        QAccessibleStateChangeEvent ev(q, changedState);
+        QAccessible::updateAccessibility(&ev);
+    }
+#endif
     emit q->enabledChanged();
 }
 
@@ -7863,22 +7897,64 @@ bool QQuickItem::contains(const QPointF &point) const
     \qmlproperty QObject* QtQuick::Item::containmentMask
     \since 5.11
     This property holds an optional mask for the Item to be used in the
-    QtQuick::Item::contains method.
-    QtQuick::Item::contains main use is currently to determine whether
-    an input event has landed into the item or not.
+    QtQuick::Item::contains() method. Its main use is currently to determine
+    whether a \l {QPointerEvent}{pointer event} has landed into the item or not.
 
     By default the \l contains method will return true for any point
-    within the Item's bounding box. \c containmentMask allows for a
-    more fine-grained control. For example, the developer could
-    define and use an AnotherItem element as containmentMask,
-    which has a specialized contains method, like:
+    within the Item's bounding box. \c containmentMask allows for
+    more fine-grained control. For example, if a custom C++
+    QQuickItem subclass with a specialized contains() method
+    is used as containmentMask:
 
     \code
     Item { id: item; containmentMask: AnotherItem { id: anotherItem } }
     \endcode
 
-    \e{item}'s contains method would then return true only if
-    \e{anotherItem}'s contains implementation returns true.
+    \e{item}'s contains method would then return \c true only if
+    \e{anotherItem}'s contains() implementation returns \c true.
+
+    A \l Shape can be used as a mask, to make an item react to
+    \l {QPointerEvent}{pointer events} only within a non-rectangular region:
+
+    \table
+    \row
+    \li \image containmentMask-shape.gif
+    \li \snippet qml/item/containmentMask-shape.qml 0
+    \endtable
+
+    It is also possible to define the contains method in QML. For example,
+    to create a circular item that only responds to events within its
+    actual bounds:
+
+    \table
+    \row
+    \li \image containmentMask-circle.gif
+    \li \snippet qml/item/containmentMask-circle-js.qml 0
+    \endtable
+
+    \sa {Qt Quick Examples - Shapes}
+*/
+/*!
+    \property QQuickItem::containmentMask
+    \since 5.11
+    This property holds an optional mask to be used in the contains() method,
+    which is mainly used for hit-testing each \l QPointerEvent.
+
+    By default, \l contains() will return \c true for any point
+    within the Item's bounding box. But any QQuickItem, or any QObject
+    that implements a function of the form
+    \code
+    Q_INVOKABLE bool contains(const QPointF &point) const;
+    \endcode
+    can be used as a mask, to defer hit-testing to that object.
+
+    \note contains() is called frequently during event delivery.
+    Deferring hit-testing to another object slows it down somewhat.
+    containmentMask() can cause performance problems if that object's
+    contains() method is not efficient. If you implement a custom
+    QQuickItem subclass, you can alternatively override contains().
+
+    \sa contains()
 */
 QObject *QQuickItem::containmentMask() const
 {
@@ -8924,13 +9000,20 @@ QQuickItemPrivate::ExtraData::ExtraData()
 
 
 #if QT_CONFIG(accessibility)
-QAccessible::Role QQuickItemPrivate::accessibleRole() const
+QAccessible::Role QQuickItemPrivate::effectiveAccessibleRole() const
 {
     Q_Q(const QQuickItem);
-    QQuickAccessibleAttached *accessibleAttached = qobject_cast<QQuickAccessibleAttached *>(qmlAttachedPropertiesObject<QQuickAccessibleAttached>(q, false));
-    if (accessibleAttached)
-        return accessibleAttached->role();
+    auto *attached = qmlAttachedPropertiesObject<QQuickAccessibleAttached>(q, false);
+    auto role = QAccessible::NoRole;
+    if (auto *accessibleAttached = qobject_cast<QQuickAccessibleAttached *>(attached))
+        role = accessibleAttached->role();
+    if (role == QAccessible::NoRole)
+        role = accessibleRole();
+    return role;
+}
 
+QAccessible::Role QQuickItemPrivate::accessibleRole() const
+{
     return QAccessible::NoRole;
 }
 #endif

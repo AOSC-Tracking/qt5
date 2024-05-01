@@ -44,9 +44,19 @@
 #include <QtGui/QOpenGLVertexArrayObject>
 #include <QtGui/QOpenGLContext>
 #include <QtGui/QOpenGLFunctions>
+#include <QtGui/QOpenGLExtraFunctions>
 
 #ifndef GL_TEXTURE_EXTERNAL_OES
 #define GL_TEXTURE_EXTERNAL_OES           0x8D65
+#endif
+#ifndef GL_TEXTURE_RECTANGLE
+#define GL_TEXTURE_RECTANGLE              0x84F5
+#endif
+#ifndef GL_TEXTURE_WIDTH
+#define GL_TEXTURE_WIDTH                  0x1000
+#endif
+#ifndef GL_TEXTURE_HEIGHT
+#define GL_TEXTURE_HEIGHT                 0x1001
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -153,6 +163,30 @@ static const char fragment_shader_external_oes[] =
     "   gl_FragColor = swizzle ? tmpFragColor.bgra : tmpFragColor;"
     "}";
 
+static const char fragment_shader_rectangle[] =
+    "varying highp vec2 uv;"
+    "uniform sampler2DRect textureSampler;"
+    "uniform bool swizzle;"
+    "uniform highp float opacity;"
+    "void main() {"
+    "   highp vec4 tmpFragColor = texture2DRect(textureSampler,uv);"
+    "   tmpFragColor.a *= opacity;"
+    "   gl_FragColor = swizzle ? tmpFragColor.bgra : tmpFragColor;"
+    "}";
+
+static const char fragment_shader150_rectangle[] =
+    "#version 150 core\n"
+    "in vec2 uv;"
+    "out vec4 fragcolor;"
+    "uniform sampler2DRect textureSampler;"
+    "uniform bool swizzle;"
+    "uniform float opacity;"
+    "void main() {"
+    "   vec4 tmpFragColor = texture(textureSampler, uv);"
+    "   tmpFragColor.a *= opacity;"
+    "   fragcolor = swizzle ? tmpFragColor.bgra : tmpFragColor;"
+    "}";
+
 static const GLfloat vertex_buffer_data[] = {
         -1,-1, 0,
         -1, 1, 0,
@@ -198,10 +232,12 @@ public:
 
     enum ProgramIndex {
         TEXTURE_2D,
-        TEXTURE_EXTERNAL_OES
+        TEXTURE_EXTERNAL_OES,
+        TEXTURE_RECTANGLE
     };
 
-    QOpenGLTextureBlitterPrivate() :
+    QOpenGLTextureBlitterPrivate(QOpenGLTextureBlitter *q_ptr) :
+        q(q_ptr),
         swizzle(false),
         opacity(1.0f),
         vao(new QOpenGLVertexArrayObject),
@@ -209,12 +245,18 @@ public:
     { }
 
     bool buildProgram(ProgramIndex idx, const char *vs, const char *fs);
+    bool ensureProgram(ProgramIndex idx);
 
-    void blit(GLuint texture, const QMatrix4x4 &vertexTransform, const QMatrix3x3 &textureTransform);
-    void blit(GLuint texture, const QMatrix4x4 &vertexTransform, QOpenGLTextureBlitter::Origin origin);
+    void blit(GLuint texture, const QMatrix4x4 &targetTransform, const QMatrix3x3 &sourceTransform);
+    void blit(GLuint texture, const QMatrix4x4 &targetTransform, QOpenGLTextureBlitter::Origin origin);
 
-    void prepareProgram(const QMatrix4x4 &vertexTransform);
+    QMatrix3x3 toTextureCoordinates(const QMatrix3x3 &sourceTransform) const;
 
+    bool prepareProgram(const QMatrix4x4 &vertexTransform);
+
+    bool supportsRectangleTarget() const;
+
+    QOpenGLTextureBlitter *q;
     QOpenGLBuffer vertexBuffer;
     QOpenGLBuffer textureBuffer;
     struct Program {
@@ -239,7 +281,7 @@ public:
         bool swizzle;
         float opacity;
         TextureMatrixUniform textureMatrixUniformState;
-    } programs[2];
+    } programs[3];
     bool swizzle;
     float opacity;
     QScopedPointer<QOpenGLVertexArrayObject> vao;
@@ -253,15 +295,21 @@ static inline QOpenGLTextureBlitterPrivate::ProgramIndex targetToProgramIndex(GL
         return QOpenGLTextureBlitterPrivate::TEXTURE_2D;
     case GL_TEXTURE_EXTERNAL_OES:
         return QOpenGLTextureBlitterPrivate::TEXTURE_EXTERNAL_OES;
+    case GL_TEXTURE_RECTANGLE:
+        return QOpenGLTextureBlitterPrivate::TEXTURE_RECTANGLE;
     default:
         qWarning("Unsupported texture target 0x%x", target);
         return QOpenGLTextureBlitterPrivate::TEXTURE_2D;
     }
 }
 
-void QOpenGLTextureBlitterPrivate::prepareProgram(const QMatrix4x4 &vertexTransform)
+bool QOpenGLTextureBlitterPrivate::prepareProgram(const QMatrix4x4 &vertexTransform)
 {
-    Program *program = &programs[targetToProgramIndex(currentTarget)];
+    ProgramIndex programIndex = targetToProgramIndex(currentTarget);
+    if (!ensureProgram(programIndex))
+        return false;
+
+    Program *program = &programs[programIndex];
 
     vertexBuffer.bind();
     program->glProgram->setAttributeBuffer(program->vertexCoordAttribPos, GL_FLOAT, 0, 3, 0);
@@ -284,16 +332,38 @@ void QOpenGLTextureBlitterPrivate::prepareProgram(const QMatrix4x4 &vertexTransf
         program->glProgram->setUniformValue(program->opacityUniformPos, opacity);
         program->opacity = opacity;
     }
+
+    return true;
+}
+
+QMatrix3x3 QOpenGLTextureBlitterPrivate::toTextureCoordinates(const QMatrix3x3 &sourceTransform) const
+{
+    if (currentTarget == GL_TEXTURE_RECTANGLE) {
+        // Non-normalized coordinates
+        QMatrix4x4 textureTransform(sourceTransform);
+        if (auto *glFunctions = QOpenGLContext::currentContext()->extraFunctions()) {
+            int width, height;
+            glFunctions->glGetTexLevelParameteriv(currentTarget, 0, GL_TEXTURE_WIDTH, &width);
+            glFunctions->glGetTexLevelParameteriv(currentTarget, 0, GL_TEXTURE_HEIGHT, &height);
+            textureTransform.scale(width, height);
+        }
+        return textureTransform.toGenericMatrix<3, 3>();
+    }
+
+    return sourceTransform; // Normalized coordinates
 }
 
 void QOpenGLTextureBlitterPrivate::blit(GLuint texture,
-                                        const QMatrix4x4 &vertexTransform,
-                                        const QMatrix3x3 &textureTransform)
+                                        const QMatrix4x4 &targetTransform,
+                                        const QMatrix3x3 &sourceTransform)
 {
     TextureBinder binder(currentTarget, texture);
-    prepareProgram(vertexTransform);
+    if (!prepareProgram(targetTransform))
+        return;
 
     Program *program = &programs[targetToProgramIndex(currentTarget)];
+
+    const QMatrix3x3 textureTransform = toTextureCoordinates(sourceTransform);
     program->glProgram->setUniformValue(program->textureTransformUniformPos, textureTransform);
     program->textureMatrixUniformState = User;
 
@@ -301,23 +371,27 @@ void QOpenGLTextureBlitterPrivate::blit(GLuint texture,
 }
 
 void QOpenGLTextureBlitterPrivate::blit(GLuint texture,
-                                        const QMatrix4x4 &vertexTransform,
+                                        const QMatrix4x4 &targetTransform,
                                         QOpenGLTextureBlitter::Origin origin)
 {
     TextureBinder binder(currentTarget, texture);
-    prepareProgram(vertexTransform);
+    if (!prepareProgram(targetTransform))
+        return;
 
     Program *program = &programs[targetToProgramIndex(currentTarget)];
+
     if (origin == QOpenGLTextureBlitter::OriginTopLeft) {
         if (program->textureMatrixUniformState != IdentityFlipped) {
-            QMatrix3x3 flipped;
-            flipped(1,1) = -1;
-            flipped(1,2) = 1;
-            program->glProgram->setUniformValue(program->textureTransformUniformPos, flipped);
+            QMatrix3x3 sourceTransform;
+            sourceTransform(1,1) = -1;
+            sourceTransform(1,2) = 1;
+            const QMatrix3x3 textureTransform = toTextureCoordinates(sourceTransform);
+            program->glProgram->setUniformValue(program->textureTransformUniformPos, textureTransform);
             program->textureMatrixUniformState = IdentityFlipped;
         }
     } else if (program->textureMatrixUniformState != Identity) {
-        program->glProgram->setUniformValue(program->textureTransformUniformPos, QMatrix3x3());
+        const QMatrix3x3 textureTransform = toTextureCoordinates(QMatrix3x3());
+        program->glProgram->setUniformValue(program->textureTransformUniformPos, textureTransform);
         program->textureMatrixUniformState = Identity;
     }
 
@@ -335,6 +409,7 @@ bool QOpenGLTextureBlitterPrivate::buildProgram(ProgramIndex idx, const char *vs
     p->glProgram->link();
     if (!p->glProgram->isLinked()) {
         qWarning() << "Could not link shader program:\n" << p->glProgram->log();
+        p->glProgram.reset();
         return false;
     }
 
@@ -355,6 +430,35 @@ bool QOpenGLTextureBlitterPrivate::buildProgram(ProgramIndex idx, const char *vs
     return true;
 }
 
+bool QOpenGLTextureBlitterPrivate::ensureProgram(ProgramIndex idx)
+{
+    if (programs[idx].glProgram)
+        return true;
+
+    QOpenGLContext *currentContext = QOpenGLContext::currentContext();
+    if (!currentContext)
+        return false;
+
+    QSurfaceFormat format = currentContext->format();
+    if (format.profile() == QSurfaceFormat::CoreProfile && format.version() >= qMakePair(3,2)) {
+        if (idx == QOpenGLTextureBlitterPrivate::TEXTURE_RECTANGLE && supportsRectangleTarget()) {
+            if (!buildProgram(idx, vertex_shader150, fragment_shader150_rectangle))
+                return false;
+        }
+    } else {
+        if (idx == QOpenGLTextureBlitterPrivate::TEXTURE_RECTANGLE && supportsRectangleTarget()) {
+            if (!buildProgram(idx, vertex_shader, fragment_shader_rectangle))
+                return false;
+        }
+        if (idx == QOpenGLTextureBlitterPrivate::TEXTURE_EXTERNAL_OES && q->supportsExternalOESTarget()) {
+            if (!buildProgram(idx, vertex_shader, fragment_shader_external_oes))
+                return false;
+        }
+    }
+
+    return programs[idx].glProgram;
+}
+
 /*!
     Constructs a new QOpenGLTextureBlitter instance.
 
@@ -365,7 +469,7 @@ bool QOpenGLTextureBlitterPrivate::buildProgram(ProgramIndex idx, const char *vs
     create().
  */
 QOpenGLTextureBlitter::QOpenGLTextureBlitter()
-    : d_ptr(new QOpenGLTextureBlitterPrivate)
+    : d_ptr(new QOpenGLTextureBlitterPrivate(this))
 {
 }
 
@@ -405,15 +509,14 @@ bool QOpenGLTextureBlitter::create()
         return true;
 
     QSurfaceFormat format = currentContext->format();
+    // Build the most common, 2D texture shader variant.
+    // The other special ones are deferred and compiled only when first needed.
     if (format.profile() == QSurfaceFormat::CoreProfile && format.version() >= qMakePair(3,2)) {
         if (!d->buildProgram(QOpenGLTextureBlitterPrivate::TEXTURE_2D, vertex_shader150, fragment_shader150))
             return false;
     } else {
         if (!d->buildProgram(QOpenGLTextureBlitterPrivate::TEXTURE_2D, vertex_shader, fragment_shader))
             return false;
-        if (supportsExternalOESTarget())
-            if (!d->buildProgram(QOpenGLTextureBlitterPrivate::TEXTURE_EXTERNAL_OES, vertex_shader, fragment_shader_external_oes))
-                return false;
     }
 
     // Create and bind the VAO, if supported.
@@ -459,6 +562,7 @@ void QOpenGLTextureBlitter::destroy()
     Q_D(QOpenGLTextureBlitter);
     d->programs[QOpenGLTextureBlitterPrivate::TEXTURE_2D].glProgram.reset();
     d->programs[QOpenGLTextureBlitterPrivate::TEXTURE_EXTERNAL_OES].glProgram.reset();
+    d->programs[QOpenGLTextureBlitterPrivate::TEXTURE_RECTANGLE].glProgram.reset();
     d->vertexBuffer.destroy();
     d->textureBuffer.destroy();
     d->vao.reset();
@@ -477,13 +581,39 @@ bool QOpenGLTextureBlitter::supportsExternalOESTarget() const
 }
 
 /*!
+    \return \c true when bind() accepts \c GL_TEXTURE_RECTANGLE as
+    its target argument.
+
+    \sa bind(), blit()
+ */
+bool QOpenGLTextureBlitterPrivate::supportsRectangleTarget() const
+{
+    QOpenGLContext *ctx = QOpenGLContext::currentContext();
+    if (!ctx || ctx->isOpenGLES())
+        return false;
+
+    if (ctx->hasExtension("GL_ARB_texture_rectangle"))
+        return true;
+
+     if (ctx->hasExtension("GL_EXT_texture_rectangle"))
+         return true;
+
+    QSurfaceFormat f = ctx->format();
+    const auto version = qMakePair(f.majorVersion(), f.minorVersion());
+    if (version >= qMakePair(3, 1))
+        return true;
+
+    return false;
+}
+
+/*!
     Binds the graphics resources used by the blitter. This must be
     called before calling blit(). Code modifying the OpenGL state
     should be avoided between the call to bind() and blit() because
     otherwise conflicts may arise.
 
     \a target is the texture target for the source texture and must be
-    either \c GL_TEXTURE_2D or \c GL_OES_EGL_image_external.
+    either \c GL_TEXTURE_2D, \c GL_TEXTURE_RECTANGLE, or \c GL_OES_EGL_image_external.
 
     \sa release(), blit()
  */
@@ -495,7 +625,11 @@ void QOpenGLTextureBlitter::bind(GLenum target)
         d->vao->bind();
 
     d->currentTarget = target;
-    QOpenGLTextureBlitterPrivate::Program *p = &d->programs[targetToProgramIndex(target)];
+    QOpenGLTextureBlitterPrivate::ProgramIndex programIndex = targetToProgramIndex(target);
+    if (!d->ensureProgram(programIndex))
+        return;
+
+    QOpenGLTextureBlitterPrivate::Program *p = &d->programs[programIndex];
     p->glProgram->bind();
 
     d->vertexBuffer.bind();
@@ -517,7 +651,9 @@ void QOpenGLTextureBlitter::bind(GLenum target)
 void QOpenGLTextureBlitter::release()
 {
     Q_D(QOpenGLTextureBlitter);
-    d->programs[targetToProgramIndex(d->currentTarget)].glProgram->release();
+    QOpenGLTextureBlitterPrivate::Program *p = &d->programs[targetToProgramIndex(d->currentTarget)];
+    if (p->glProgram)
+        p->glProgram->release();
     if (d->vao->isCreated())
         d->vao->release();
 }
@@ -586,7 +722,7 @@ void QOpenGLTextureBlitter::blit(GLuint texture,
                                  Origin sourceOrigin)
 {
     Q_D(QOpenGLTextureBlitter);
-    d->blit(texture,targetTransform, sourceOrigin);
+    d->blit(texture, targetTransform, sourceOrigin);
 }
 
 /*!

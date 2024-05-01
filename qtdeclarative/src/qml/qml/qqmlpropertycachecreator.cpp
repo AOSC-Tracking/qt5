@@ -110,11 +110,15 @@ QQmlBindingInstantiationContext::QQmlBindingInstantiationContext(int referencing
 
 bool QQmlBindingInstantiationContext::resolveInstantiatingProperty()
 {
-    if (!instantiatingBinding || instantiatingBinding->type != QV4::CompiledData::Binding::Type_GroupProperty)
+    if (!instantiatingBinding
+           || instantiatingBinding->type() != QV4::CompiledData::Binding::Type_GroupProperty) {
         return true;
+    }
+
+    if (!referencingObjectPropertyCache)
+        return false;
 
     Q_ASSERT(referencingObjectIndex >= 0);
-    Q_ASSERT(referencingObjectPropertyCache);
     Q_ASSERT(instantiatingBinding->propertyNameIndex != 0);
 
     bool notInRevision = false;
@@ -143,6 +147,11 @@ void QQmlPendingGroupPropertyBindings::resolveMissingPropertyCaches(QQmlEnginePr
 
         if (propertyCaches->at(groupPropertyObjectIndex))
             continue;
+
+        if (!pendingBinding.referencingObjectPropertyCache) {
+            pendingBinding.referencingObjectPropertyCache
+                    = propertyCaches->at(pendingBinding.referencingObjectIndex);
+        }
 
         if (!pendingBinding.resolveInstantiatingProperty())
             continue;

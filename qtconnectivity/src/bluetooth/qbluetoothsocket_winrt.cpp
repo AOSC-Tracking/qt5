@@ -50,6 +50,7 @@
 #include <QtBluetooth/qbluetoothdeviceinfo.h>
 #include <QtBluetooth/qbluetoothserviceinfo.h>
 #include <QtCore/qloggingcategory.h>
+#include <QtCore/QPointer>
 
 #include <robuffer.h>
 #include <windows.devices.bluetooth.h>
@@ -141,20 +142,6 @@ public:
     void close()
     {
         m_shuttingDown = true;
-        if (Q_UNLIKELY(m_initialReadOp)) {
-            onReadyRead(m_initialReadOp.Get(), Canceled);
-            ComPtr<IAsyncInfo> info;
-            HRESULT hr = m_initialReadOp.As(&info);
-            Q_ASSERT_SUCCEEDED(hr);
-            if (info) {
-                hr = info->Cancel();
-                Q_ASSERT_SUCCEEDED(hr);
-                hr = info->Close();
-                Q_ASSERT_SUCCEEDED(hr);
-            }
-            m_initialReadOp.Reset();
-        }
-
         if (m_readOp) {
             onReadyRead(m_readOp.Get(), Canceled);
             ComPtr<IAsyncInfo> info;
@@ -195,9 +182,16 @@ public:
             ComPtr<IInputStream> stream;
             hr = m_socket->get_InputStream(&stream);
             Q_ASSERT_SUCCEEDED(hr);
-            hr = stream->ReadAsync(buffer.Get(), READ_BUFFER_SIZE, InputStreamOptions_Partial, m_initialReadOp.GetAddressOf());
+            hr = stream->ReadAsync(buffer.Get(), READ_BUFFER_SIZE, InputStreamOptions_Partial, m_readOp.GetAddressOf());
             Q_ASSERT_SUCCEEDED(hr);
-            hr = m_initialReadOp->put_Completed(Callback<SocketReadCompletedHandler>(this, &SocketWorker::onReadyRead).Get());
+            QPointer<SocketWorker> thisPtr(this);
+            hr = m_readOp->put_Completed(
+                    Callback<SocketReadCompletedHandler>([thisPtr](IAsyncBufferOperation *asyncInfo,
+                                                                AsyncStatus status) {
+                        if (thisPtr)
+                            return thisPtr->onReadyRead(asyncInfo, status);
+                        return S_OK;
+                    }).Get());
             Q_ASSERT_SUCCEEDED(hr);
             return S_OK;
         });
@@ -209,13 +203,10 @@ public:
         if (m_shuttingDown)
             return S_OK;
 
-        if (asyncInfo == m_initialReadOp.Get()) {
-            m_initialReadOp.Reset();
-        } else if (asyncInfo == m_readOp.Get()) {
+        if (asyncInfo == m_readOp.Get())
             m_readOp.Reset();
-        } else {
+        else
             Q_ASSERT(false);
-        }
 
         // A read in UnconnectedState will close the socket and return -1 and thus tell the caller,
         // that the connection was closed. The socket cannot be closed here, as the subsequent read
@@ -301,7 +292,14 @@ public:
                 emit socketErrorOccured(QBluetoothSocket::UnknownSocketError);
                 return S_OK;
             }
-            hr = m_readOp->put_Completed(Callback<SocketReadCompletedHandler>(this, &SocketWorker::onReadyRead).Get());
+            QPointer<SocketWorker> thisPtr(this);
+            hr = m_readOp->put_Completed(
+                    Callback<SocketReadCompletedHandler>([thisPtr](IAsyncBufferOperation *asyncInfo,
+                                                                AsyncStatus status) {
+                        if (thisPtr)
+                            return thisPtr->onReadyRead(asyncInfo, status);
+                        return S_OK;
+                    }).Get());
             if (FAILED(hr)) {
                 qErrnoWarning(hr, "onReadyRead(): Failed to set socket read callback.");
                 emit socketErrorOccured(QBluetoothSocket::UnknownSocketError);
@@ -323,7 +321,6 @@ private:
     // Protects pendingData/pendingDatagrams which are accessed from native callbacks
     QMutex m_mutex;
 
-    ComPtr<IAsyncOperationWithProgress<IBuffer *, UINT32>> m_initialReadOp;
     ComPtr<IAsyncOperationWithProgress<IBuffer *, UINT32>> m_readOp;
 };
 
@@ -576,6 +573,17 @@ QString QBluetoothSocketPrivateWinRT::localName() const
     return device.name();
 }
 
+static QString fromWinApiAddress(HString address)
+{
+    // WinAPI returns address with parentheses around it. We need to remove
+    // them to convert to QBluetoothAddress.
+    QString addressStr(qt_QStringFromHString(address));
+    if (addressStr.startsWith(QLatin1Char('(')) && addressStr.endsWith(QLatin1Char(')'))) {
+        addressStr = addressStr.mid(1, addressStr.size() - 2);
+    }
+    return addressStr;
+}
+
 QBluetoothAddress QBluetoothSocketPrivateWinRT::localAddress() const
 {
     if (!m_socketObject)
@@ -588,10 +596,13 @@ QBluetoothAddress QBluetoothSocketPrivateWinRT::localAddress() const
     ComPtr<IHostName> localHost;
     hr = info->get_LocalAddress(&localHost);
     Q_ASSERT_SUCCEEDED(hr);
-    HString localAddress;
-    hr = localHost->get_CanonicalName(localAddress.GetAddressOf());
-    Q_ASSERT_SUCCEEDED(hr);
-    return QBluetoothAddress(qt_QStringFromHString(localAddress));
+    if (localHost) {
+        HString localAddress;
+        hr = localHost->get_CanonicalName(localAddress.GetAddressOf());
+        Q_ASSERT_SUCCEEDED(hr);
+        return QBluetoothAddress(fromWinApiAddress(std::move(localAddress)));
+    }
+    return QBluetoothAddress();
 }
 
 quint16 QBluetoothSocketPrivateWinRT::localPort() const
@@ -627,10 +638,13 @@ QString QBluetoothSocketPrivateWinRT::peerName() const
     ComPtr<IHostName> remoteHost;
     hr = info->get_RemoteHostName(&remoteHost);
     Q_ASSERT_SUCCEEDED(hr);
-    HString remoteHostName;
-    hr = remoteHost->get_DisplayName(remoteHostName.GetAddressOf());
-    Q_ASSERT_SUCCEEDED(hr);
-    return qt_QStringFromHString(remoteHostName);
+    if (remoteHost) {
+        HString remoteHostName;
+        hr = remoteHost->get_DisplayName(remoteHostName.GetAddressOf());
+        Q_ASSERT_SUCCEEDED(hr);
+        return qt_QStringFromHString(remoteHostName);
+    }
+    return {};
 }
 
 QBluetoothAddress QBluetoothSocketPrivateWinRT::peerAddress() const
@@ -645,10 +659,13 @@ QBluetoothAddress QBluetoothSocketPrivateWinRT::peerAddress() const
     ComPtr<IHostName> remoteHost;
     hr = info->get_RemoteAddress(&remoteHost);
     Q_ASSERT_SUCCEEDED(hr);
-    HString remoteAddress;
-    hr = remoteHost->get_CanonicalName(remoteAddress.GetAddressOf());
-    Q_ASSERT_SUCCEEDED(hr);
-    return QBluetoothAddress(qt_QStringFromHString(remoteAddress));
+    if (remoteHost) {
+        HString remoteAddress;
+        hr = remoteHost->get_CanonicalName(remoteAddress.GetAddressOf());
+        Q_ASSERT_SUCCEEDED(hr);
+        return QBluetoothAddress(fromWinApiAddress(std::move(remoteAddress)));
+    }
+    return QBluetoothAddress();
 }
 
 quint16 QBluetoothSocketPrivateWinRT::peerPort() const
@@ -661,7 +678,7 @@ quint16 QBluetoothSocketPrivateWinRT::peerPort() const
     hr = m_socketObject->get_Information(&info);
     Q_ASSERT_SUCCEEDED(hr);
     HString remotePortString;
-    hr = info->get_LocalPort(remotePortString.GetAddressOf());
+    hr = info->get_RemotePort(remotePortString.GetAddressOf());
     Q_ASSERT_SUCCEEDED(hr);
     bool ok = true;
     const uint port = qt_QStringFromHString(remotePortString).toUInt(&ok);

@@ -53,7 +53,8 @@ enum DotNET {
     NET2013 = 0xc0,
     NET2015 = 0xd0,
     NET2017 = 0xe0,
-    NET2019
+    NET2019,
+    NET2022
 };
 
 DotNET vsVersionFromString(const ProString &versionString);
@@ -282,7 +283,8 @@ enum inlineExpansionOption {
 };
 enum linkerDebugOption {
     linkerDebugOptionNone,
-    linkerDebugOptionFastLink
+    linkerDebugOptionFastLink,
+    linkerDebugOptionFull
 };
 enum linkIncrementalType {
     linkIncrementalDefault,
@@ -355,6 +357,7 @@ enum optWin98Type {
 enum optLinkTimeCodeGenType {
     optLTCGDefault,
     optLTCGEnabled,
+    optLTCGIncremental,
     optLTCGInstrument,
     optLTCGOptimize,
     optLTCGUpdate
@@ -527,6 +530,7 @@ public:
     inlineExpansionOption   InlineFunctionExpansion;
     triState                KeepComments;
     QString                 LanguageStandard;
+    QString                 LanguageStandard_C;
     triState                MinimalRebuild;
     QString                 ObjectFile;
     triState                OmitDefaultLibName;

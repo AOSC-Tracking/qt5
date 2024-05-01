@@ -258,7 +258,7 @@ QQmlDelegateModel::~QQmlDelegateModel()
 {
     Q_D(QQmlDelegateModel);
     d->disconnectFromAbstractItemModel();
-    d->m_adaptorModel.setObject(nullptr, this);
+    d->m_adaptorModel.setObject(nullptr);
 
     for (QQmlDelegateModelItem *cacheItem : qAsConst(d->m_cache)) {
         if (cacheItem->object) {
@@ -980,6 +980,17 @@ void QQDMIncubationTask::initializeRequiredProperties(QQmlDelegateModelItem *mod
             contextData->extraObject = modelItemToIncubate;
         }
 
+        // If we have required properties, we clear the context object
+        // so that the model role names are not polluting the context
+        if (incubating) {
+            Q_ASSERT(incubating->contextData);
+            incubating->contextData->contextObject = nullptr;
+        }
+
+        if (proxyContext) {
+            proxyContext->contextObject = nullptr;
+        }
+
         if (incubatorPriv->requiredProperties().empty())
             return;
         RequiredProperties &requiredProperties = incubatorPriv->requiredProperties();
@@ -1291,6 +1302,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQ
 
         QQmlContextData *ctxt = new QQmlContextData;
         ctxt->setParent(QQmlContextData::get(creationContext  ? creationContext : m_context.data()));
+        ctxt->contextObject = cacheItem;
         cacheItem->contextData = ctxt;
 
         if (m_adaptorModel.hasProxyObject()) {
@@ -1301,6 +1313,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQ
                 QObject *proxied = proxy->proxiedObject();
                 cacheItem->incubationTask->proxiedObject = proxied;
                 cacheItem->incubationTask->proxyContext = ctxt;
+                ctxt->contextObject = cacheItem;
                 // We don't own the proxied object. We need to clear it if it goes away.
                 QObject::connect(proxied, &QObject::destroyed,
                                  cacheItem, &QQmlDelegateModelItem::childContextObjectDestroyed);
@@ -1727,6 +1740,7 @@ void QQmlDelegateModel::_q_itemsRemoved(int index, int count)
         return;
 
     d->m_count -= count;
+    Q_ASSERT(d->m_count >= 0);
     const QList<QQmlDelegateModelItem *> cache = d->m_cache;
     //Prevents items being deleted in remove loop
     for (QQmlDelegateModelItem *item : cache)
@@ -1869,10 +1883,15 @@ void QQmlDelegateModelPrivate::emitChanges()
     for (int i = 1; i < m_groupCount; ++i)
         QQmlDelegateModelGroupPrivate::get(m_groups[i])->emitModelUpdated(reset);
 
-    auto cacheCopy = m_cache; // deliberate; emitChanges may alter m_cache
-    for (QQmlDelegateModelItem *cacheItem : qAsConst(cacheCopy)) {
-        if (cacheItem->attached)
-            cacheItem->attached->emitChanges();
+    // emitChanges may alter m_cache and delete items
+    QVarLengthArray<QPointer<QQmlDelegateModelAttached>> attachedObjects;
+    attachedObjects.reserve(m_cache.length());
+    for (const QQmlDelegateModelItem *cacheItem : qAsConst(m_cache))
+        attachedObjects.append(cacheItem->attached);
+
+    for (const QPointer<QQmlDelegateModelAttached> &attached : qAsConst(attachedObjects)) {
+        if (attached && attached->m_cacheItem)
+            attached->emitChanges();
     }
 }
 
@@ -2693,20 +2712,24 @@ void QQmlDelegateModelAttached::emitChanges()
     m_previousGroups = m_cacheItem->groups;
 
     int indexChanges = 0;
-    for (int i = 1; i < m_cacheItem->metaType->groupCount; ++i) {
+    const int groupCount = m_cacheItem->metaType->groupCount;
+    for (int i = 1; i < groupCount; ++i) {
         if (m_previousIndex[i] != m_currentIndex[i]) {
             m_previousIndex[i] = m_currentIndex[i];
             indexChanges |= (1 << i);
         }
     }
 
+    // Don't access m_cacheItem anymore once we've started sending signals.
+    // We don't own it and someone might delete it.
+
     int notifierId = 0;
     const QMetaObject *meta = metaObject();
-    for (int i = 1; i < m_cacheItem->metaType->groupCount; ++i, ++notifierId) {
+    for (int i = 1; i < groupCount; ++i, ++notifierId) {
         if (groupChanges & (1 << i))
             QMetaObject::activate(this, meta, notifierId, nullptr);
     }
-    for (int i = 1; i < m_cacheItem->metaType->groupCount; ++i, ++notifierId) {
+    for (int i = 1; i < groupCount; ++i, ++notifierId) {
         if (indexChanges & (1 << i))
             QMetaObject::activate(this, meta, notifierId, nullptr);
     }
@@ -3952,5 +3975,7 @@ QV4::ReturnedValue QQmlDelegateModelEngineData::array(QV4::ExecutionEngine *v4,
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qqmldelegatemodel_p_p.cpp"
 
 #include "moc_qqmldelegatemodel_p.cpp"

@@ -1088,35 +1088,67 @@ void tst_QQuaternion::fromEulerAngles_data()
     QTest::addColumn<float>("yaw");
     QTest::addColumn<float>("roll");
 
+    QTest::addColumn<QQuaternion>("quaternion");
+
     QTest::newRow("null")
-        << 0.0f << 0.0f << 0.0f;
+        << 0.0f << 0.0f << 0.0f << QQuaternion(1.0f, 0.0f, 0.0f, 0.0f);
 
     QTest::newRow("xonly")
-        << 90.0f << 0.0f << 0.0f;
+        << 90.0f << 0.0f << 0.0f << QQuaternion(0.707107f, 0.707107f, 0.0f, 0.0f);
 
     QTest::newRow("yonly")
-        << 0.0f << 180.0f << 0.0f;
+        << 0.0f << 180.0f << 0.0f << QQuaternion(0.0f, 0.0f, 1.0f, 0.0f);
 
     QTest::newRow("zonly")
-        << 0.0f << 0.0f << 270.0f;
+        << 0.0f << 0.0f << 270.0f << QQuaternion(-0.707107f, 0.0f, 0.0f, 0.707107f);
 
     QTest::newRow("x+z")
-        << 30.0f << 0.0f << 45.0f;
+        << 30.0f << 0.0f << 45.0f << QQuaternion(0.892399f, 0.239118f, -0.099046f, 0.369644f);
 
     QTest::newRow("x+y")
-        << 30.0f << 90.0f << 0.0f;
+        << 30.0f << 90.0f << 0.0f << QQuaternion(0.683013f, 0.183013f, 0.683013f, -0.183013f);
 
     QTest::newRow("y+z")
-        << 0.0f << 45.0f << 30.0f;
+        << 0.0f << 45.0f << 30.0f << QQuaternion(0.892399f, 0.099046f, 0.369644f, 0.239118f);
 
     QTest::newRow("complex")
-        << 30.0f << 240.0f << -45.0f;
+        << 30.0f << 240.0f << -45.0f << QQuaternion(-0.531976f, -0.43968f, 0.723317f, -0.02226f);
+
+    // Three gimbal_lock cases are not unique for the conversions from quaternion
+    // to euler, Qt will use only XY rotations for these cases.
+    // For example, QQuaternion(0.5f, 0.5f, -0.5f, 0.5f) can be EulerXYZ(90.0f, 0.0f, 90.0f), too.
+    // But Qt will always convert it to EulerXYZ(90.0f, -90.0f, 0.0f) without Z-rotation.
+    QTest::newRow("gimbal_lock_1")
+            << 90.0f << -90.0f << 0.0f << QQuaternion(0.5f, 0.5f, -0.5f, 0.5f);
+
+    QTest::newRow("gimbal_lock_2")
+            << 90.0f << 40.0f << 0.0f << QQuaternion(0.664463f, 0.664463f, 0.241845f, -0.241845f);
+
+    QTest::newRow("gimbal_lock_3") << 90.0f << 170.0f << 0.0f
+                                   << QQuaternion(0.0616285f, 0.0616285f, 0.704416f, -0.704416f);
+
+    // These four examples have a fraction of errors that would bypass normalize() threshold
+    // and could make Gimbal lock detection fail.
+    QTest::newRow("gimbal_lock_fraction_1")
+            << -90.0f << 90.001152f << 0.0f << QQuaternion(0.499989986f, -0.5f, 0.5f, 0.5f);
+
+    QTest::newRow("gimbal_lock_fraction_2")
+            << -90.0f << -179.999985f << 0.0f
+            << QQuaternion(1.00000001e-07f, 1.00000001e-10f, -0.707106769f, -0.707105756f);
+
+    QTest::newRow("gimbal_lock_fraction_3")
+            << -90.0f << 90.0011597f << 0.0f << QQuaternion(0.499989986f, -0.49999994f, 0.5f, 0.5f);
+
+    QTest::newRow("gimbal_lock_fraction_4")
+            << -90.0f << -180.0f << 0.0f
+            << QQuaternion(9.99999996e-12f, 9.99999996e-12f, -0.707106769f, -0.707096756f);
 }
 void tst_QQuaternion::fromEulerAngles()
 {
     QFETCH(float, pitch);
     QFETCH(float, yaw);
     QFETCH(float, roll);
+    QFETCH(QQuaternion, quaternion);
 
     // Use a straight-forward implementation of the algorithm at:
     // http://www.j3d.org/matrix_faq/matrfaq_latest.html#Q60
@@ -1132,11 +1164,22 @@ void tst_QQuaternion::fromEulerAngles()
     QVERIFY(myFuzzyCompare(answer.z(), result.z()));
     QVERIFY(myFuzzyCompare(answer.scalar(), result.scalar()));
 
+    // quaternion should be the same as the result
+    QVERIFY(myFuzzyCompare(answer.x(), quaternion.x()));
+    QVERIFY(myFuzzyCompare(answer.y(), quaternion.y()));
+    QVERIFY(myFuzzyCompare(answer.z(), quaternion.z()));
+    QVERIFY(myFuzzyCompare(answer.scalar(), quaternion.scalar()));
+
     {
         QVector3D answerEulerAngles = answer.toEulerAngles();
         QVERIFY(myFuzzyCompareDegrees(answerEulerAngles.x(), pitch));
         QVERIFY(myFuzzyCompareDegrees(answerEulerAngles.y(), yaw));
         QVERIFY(myFuzzyCompareDegrees(answerEulerAngles.z(), roll));
+
+        QVector3D quaternionEulerAngles = quaternion.toEulerAngles();
+        QVERIFY(myFuzzyCompareDegrees(quaternionEulerAngles.x(), pitch));
+        QVERIFY(myFuzzyCompareDegrees(quaternionEulerAngles.y(), yaw));
+        QVERIFY(myFuzzyCompareDegrees(quaternionEulerAngles.z(), roll));
     }
 
     answer = QQuaternion::fromEulerAngles(pitch, yaw, roll);
@@ -1151,6 +1194,12 @@ void tst_QQuaternion::fromEulerAngles()
         QVERIFY(myFuzzyCompareDegrees(answerPitch, pitch));
         QVERIFY(myFuzzyCompareDegrees(answerYaw, yaw));
         QVERIFY(myFuzzyCompareDegrees(answerRoll, roll));
+
+        float quaternionPitch, quaternionYaw, quaternionRoll;
+        quaternion.getEulerAngles(&quaternionPitch, &quaternionYaw, &quaternionRoll);
+        QVERIFY(myFuzzyCompareDegrees(quaternionPitch, pitch));
+        QVERIFY(myFuzzyCompareDegrees(quaternionYaw, yaw));
+        QVERIFY(myFuzzyCompareDegrees(quaternionRoll, roll));
     }
 }
 

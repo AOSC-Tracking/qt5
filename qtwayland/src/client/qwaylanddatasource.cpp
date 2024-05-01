@@ -49,6 +49,7 @@
 
 #include <unistd.h>
 #include <signal.h>
+#include <fcntl.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -71,11 +72,6 @@ QWaylandDataSource::~QWaylandDataSource()
     destroy();
 }
 
-QMimeData * QWaylandDataSource::mimeData() const
-{
-    return m_mime_data;
-}
-
 void QWaylandDataSource::data_source_cancelled()
 {
     Q_EMIT cancelled();
@@ -93,7 +89,15 @@ void QWaylandDataSource::data_source_send(const QString &mime_type, int32_t fd)
         action.sa_flags = 0;
 
         sigaction(SIGPIPE, &action, &oldAction);
-        write(fd, content.constData(), content.size());
+        // Some compositors (e.g., mutter) make fd with O_NONBLOCK.
+        // Since wl_data_source.send describes that fd is closed here,
+        // it should be done in a loop and don't have any advantage.
+        // Blocking operation will be used.
+        // According to fcntl(2), FSETFL ignores O_WRONLY. So this
+        // call will just remove O_NONBLOCK.
+        fcntl(fd, F_SETFL, O_WRONLY);
+        ssize_t unused = write(fd, content.constData(), content.size());
+        Q_UNUSED(unused);
         sigaction(SIGPIPE, &oldAction, nullptr);
     }
     close(fd);
@@ -132,3 +136,5 @@ void QWaylandDataSource::data_source_dnd_drop_performed()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qwaylanddatasource_p.cpp"

@@ -1,5 +1,8 @@
+CONFIG += compile_included_sources
+
 INCLUDEPATH += \
     $$PWD/libwebp \
+    $$PWD/libwebp/sharpyuv \
     $$PWD/libwebp/src \
     $$PWD/libwebp/src/dec \
     $$PWD/libwebp/src/enc \
@@ -9,6 +12,12 @@ INCLUDEPATH += \
     $$PWD/libwebp/src/webp
 
 SOURCES += \
+    $$PWD/libwebp/sharpyuv/sharpyuv.c \
+    $$PWD/libwebp/sharpyuv/sharpyuv_cpu.c \
+    $$PWD/libwebp/sharpyuv/sharpyuv_csp.c \
+    $$PWD/libwebp/sharpyuv/sharpyuv_dsp.c \
+    $$PWD/libwebp/sharpyuv/sharpyuv_gamma.c \
+    $$PWD/libwebp/sharpyuv/sharpyuv_sse2.c \
     $$PWD/libwebp/src/dec/alpha_dec.c \
     $$PWD/libwebp/src/dec/buffer_dec.c \
     $$PWD/libwebp/src/dec/frame_dec.c \
@@ -71,6 +80,7 @@ SOURCES += \
     $$PWD/libwebp/src/dsp/yuv.c \
     $$PWD/libwebp/src/dsp/yuv_mips_dsp_r2.c \
     $$PWD/libwebp/src/dsp/lossless_sse2.c \
+    $$PWD/libwebp/src/dsp/lossless_sse41.c \
     $$PWD/libwebp/src/dsp/yuv_mips32.c \
     $$PWD/libwebp/src/dsp/yuv_sse2.c \
     $$PWD/libwebp/src/dsp/yuv_sse41.c \
@@ -124,6 +134,7 @@ integrity {
 }
 
 SOURCES_FOR_NEON += \
+    $$PWD/libwebp/sharpyuv/sharpyuv_neon.c \
     $$PWD/libwebp/src/dsp/alpha_processing_neon.c \
     $$PWD/libwebp/src/dsp/dec_neon.c \
     $$PWD/libwebp/src/dsp/enc_neon.c \
@@ -137,7 +148,7 @@ SOURCES_FOR_NEON += \
 
 android {
     arm64-v8a | armeabi-v7a: SOURCES += $$SOURCES_FOR_NEON
-} else: equals(QT_ARCH, arm)|equals(QT_ARCH, arm64) {
+} else:!macos: equals(QT_ARCH, arm)|equals(QT_ARCH, arm64) {
     contains(QT_CPU_FEATURES.$$QT_ARCH, neon) {
         # Default compiler settings include this feature, so just add to SOURCES
         SOURCES += $$SOURCES_FOR_NEON
@@ -155,4 +166,7 @@ android {
         silent: neon_comp.commands = @echo compiling[neon] ${QMAKE_FILE_IN} && $$neon_comp.commands
         QMAKE_EXTRA_COMPILERS += neon_comp
     }
+} else:macos {
+    CONFIG += simd
+    NEON_SOURCES += $$SOURCES_FOR_NEON
 }

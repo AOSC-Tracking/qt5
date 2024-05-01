@@ -763,6 +763,13 @@ void QQuickShape::setAsynchronous(bool async)
     performance. Setting the value to \c true is safe in any case since
     rendering falls back to the default method when the vendor-specific
     approach, such as \c GL_NV_path_rendering, is not supported at run time.
+
+    \deprecated
+
+    Changing the default value (false) is not recommended. In particular,
+    support for Shape.NvprRenderer will not be available in future Qt versions.
+    Applications experiencing rendering problems with the property set to true
+    are advised to set it to false.
  */
 
 bool QQuickShape::vendorExtensionsEnabled() const
@@ -1515,6 +1522,7 @@ static void generateGradientColorTable(const QQuickShapeGradientCacheKey &gradie
 {
     int pos = 0;
     const QGradientStops &s = gradient.stops;
+    Q_ASSERT(!s.isEmpty());
     const bool colorInterpolation = true;
 
     uint alpha = qRound(opacity * 256);
@@ -1552,8 +1560,6 @@ static void generateGradientColorTable(const QQuickShapeGradientCacheKey &gradie
         current_color = next_color;
     }
 
-    Q_ASSERT(s.size() > 0);
-
     uint last_color = ARGB2RGBA(qPremultiply(ARGB_COMBINE_ALPHA(s[sLast].second.rgba(), alpha)));
     for ( ; pos < size; ++pos)
         colorTable[pos] = last_color;
@@ -1588,7 +1594,10 @@ QSGTexture *QQuickShapeGradientCache::get(const QQuickShapeGradientCacheKey &gra
     if (!tx) {
         static const int W = 1024; // texture size is 1024x1
         QImage gradTab(W, 1, QImage::Format_RGBA8888_Premultiplied);
-        generateGradientColorTable(grad, reinterpret_cast<uint *>(gradTab.bits()), W, 1.0f);
+        if (!grad.stops.isEmpty())
+            generateGradientColorTable(grad, reinterpret_cast<uint *>(gradTab.bits()), W, 1.0f);
+        else
+            gradTab.fill(Qt::black);
         tx = new QSGPlainTexture;
         tx->setImage(gradTab);
         switch (grad.spread) {

@@ -59,13 +59,20 @@
     if (!iface)
         return;
 
-    [self createAccessibleElement: iface];
     for (int i = 0; i < iface->childCount(); ++i)
         [self createAccessibleContainer: iface->child(i)];
+
+    // The container element must go last, so that it underlays all its children
+    [self createAccessibleElement:iface];
 }
 
 - (void)initAccessibility
 {
+    // The window may have gone away, but with the view
+    // temporarily caught in the a11y subsystem.
+    if (!self.platformWindow)
+        return;
+
     static bool init = false;
     if (!init)
         QGuiApplicationPrivate::platformIntegration()->accessibility()->setActive(true);

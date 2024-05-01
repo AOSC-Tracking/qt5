@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2022 The Qt Company Ltd.
 ** Copyright (C) 2012 BogDan Vatra <bogdan@kde.org>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -42,16 +42,43 @@ package org.qtproject.qt5.android;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Rect;
+import android.os.Build;
+import android.util.Log;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
+import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
-import android.graphics.Rect;
+import android.view.WindowManager;
+import android.view.WindowMetrics;
+import android.view.WindowInsets;
+import android.graphics.Insets;
+import android.content.res.Configuration;
+import android.content.res.Resources;
 
 public class QtLayout extends ViewGroup
 {
     private Runnable m_startApplicationRunnable;
-    private int m_bottomDisplayFrame = -1;
+
+    private int m_activityDisplayRotation = -1;
+    private int m_ownDisplayRotation = -1;
+    private int m_nativeOrientation = -1;
+
+    public void setActivityDisplayRotation(int rotation)
+    {
+        m_activityDisplayRotation = rotation;
+    }
+
+    public void setNativeOrientation(int orientation)
+    {
+        m_nativeOrientation = orientation;
+    }
+
+    public int displayRotation()
+    {
+        return m_ownDisplayRotation;
+    }
 
     public QtLayout(Context context, Runnable startRunnable)
     {
@@ -69,30 +96,58 @@ public class QtLayout extends ViewGroup
         super(context, attrs, defStyle);
     }
 
-    private void handleSizeChanged (int w, int h, int oldw, int oldh)
-    {
-        DisplayMetrics metrics = new DisplayMetrics();
-        ((Activity) getContext()).getWindowManager().getDefaultDisplay().getMetrics(metrics);
-
-        Rect r = new Rect();
-        ((Activity) getContext()).getWindow().getDecorView().getWindowVisibleDisplayFrame(r);
-
-        if (m_bottomDisplayFrame !=  r.bottom) {
-            m_bottomDisplayFrame =  r.bottom;
-            QtNative.setApplicationDisplayMetrics(metrics.widthPixels, metrics.heightPixels, w, h,
-                                                metrics.xdpi,
-                                                metrics.ydpi,
-                                                metrics.scaledDensity,
-                                                metrics.density,
-                                                ((metrics.heightPixels == h) || (metrics.heightPixels == h + r.top)));
-        }
-    }
-
     @Override
     protected void onSizeChanged (int w, int h, int oldw, int oldh)
     {
-        handleSizeChanged (w, h, oldw, oldh);
+        Activity activity = (Activity)getContext();
+        if (activity == null)
+            return;
 
+        final WindowManager windowManager = activity.getWindowManager();
+        Display display;
+
+        final WindowInsets rootInsets = getRootWindowInsets();
+
+        int maxWidth = 0;
+        int maxHeight = 0;
+
+        if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            display = windowManager.getDefaultDisplay();
+
+            final DisplayMetrics maxMetrics = new DisplayMetrics();
+            display.getRealMetrics(maxMetrics);
+            maxWidth = maxMetrics.widthPixels;
+            maxHeight = maxMetrics.heightPixels;
+        } else {
+            display = activity.getDisplay();
+
+            final WindowMetrics maxMetrics = windowManager.getMaximumWindowMetrics();
+            maxWidth = maxMetrics.getBounds().width();
+            maxHeight = maxMetrics.getBounds().height();
+        }
+
+        final DisplayMetrics displayMetrics = activity.getResources().getDisplayMetrics();
+        double xdpi = displayMetrics.xdpi;
+        double ydpi = displayMetrics.ydpi;
+        double density = displayMetrics.density;
+        double scaledDensity = displayMetrics.scaledDensity;
+        float refreshRate = display.getRefreshRate();
+
+        QtNative.setApplicationDisplayMetrics(maxWidth, maxHeight, w, h,
+                                              xdpi,ydpi,scaledDensity, density,
+                                              refreshRate);
+
+        int newRotation = display.getRotation();
+        if (m_ownDisplayRotation != m_activityDisplayRotation
+            && newRotation == m_activityDisplayRotation) {
+            // If the saved rotation value does not match the one from the
+            // activity, it means that we got orientation change before size
+            // change, and the value was cached. So we need to notify about
+            // orientation change now.
+            QtNative.handleOrientationChanged(newRotation, m_nativeOrientation);
+        }
+
+        m_ownDisplayRotation = newRotation;
         if (m_startApplicationRunnable != null) {
             m_startApplicationRunnable.run();
             m_startApplicationRunnable = null;
@@ -170,8 +225,6 @@ public class QtLayout extends ViewGroup
 
             }
         }
-
-        handleSizeChanged (r, b, 0, 0);
     }
 
     // Override to allow type-checking of LayoutParams.

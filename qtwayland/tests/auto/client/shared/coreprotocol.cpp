@@ -185,6 +185,8 @@ void Output::output_bind_resource(QtWaylandServer::wl_output::Resource *resource
 
     if (m_version >= WL_OUTPUT_DONE_SINCE_VERSION)
         wl_output::send_done(resource->handle);
+
+    Q_EMIT outputBound(resource);
 }
 
 // Seat stuff
@@ -449,6 +451,13 @@ void Touch::sendFrame(wl_client *client)
     const auto touchResources = resourceMap().values(client);
     for (auto *r : touchResources)
         send_frame(r->handle);
+}
+
+void Touch::sendCancel(wl_client *client)
+{
+    const auto touchResources = resourceMap().values(client);
+    for (auto *r : touchResources)
+        send_cancel(r->handle);
 }
 
 uint Keyboard::sendEnter(Surface *surface)

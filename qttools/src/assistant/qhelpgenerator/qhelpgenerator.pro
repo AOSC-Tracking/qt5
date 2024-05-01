@@ -1,4 +1,4 @@
-QT += network help-private
+QT += help-private
 
 QTPLUGIN.platforms = qminimal
 QTPLUGIN.sqldrivers = qsqlite

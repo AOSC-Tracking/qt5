@@ -1,3 +1,18 @@
+function(qt_internal_get_highest_android_sdk_build_tools_revision out_var build_tools_dir)
+  file(GLOB revisions RELATIVE "${build_tools_dir}" "${build_tools_dir}/*")
+  if(NOT revisions)
+    message(FATAL_ERROR "Cannot determine version of Android build tools. "
+      "Please specify ANDROID_SDK_BUILD_TOOLS_REVISION manually.")
+  endif()
+  set(highest_revision 1.0)
+  foreach(revision IN LISTS revisions)
+    if(revision VERSION_GREATER highest_revision)
+      set(highest_revision ${revision})
+    endif()
+  endforeach()
+  set(${out_var} ${highest_revision} PARENT_SCOPE)
+endfunction()
+
 if (NOT ${PROJECT_NAME}-MultiAbiBuild)
 
   set(ANDROID_ABIS armeabi-v7a arm64-v8a x86 x86_64)
@@ -18,8 +33,8 @@ if (NOT ${PROJECT_NAME}-MultiAbiBuild)
       option(ANDROID_BUILD_ABI_${abi} "Enable the build for Android ${abi}" ${abi_initial_value})
     endif()
   endforeach()
-  option(ANDROID_MIN_SDK_VERSION "Android minimum SDK version" "21")
-  option(ANDROID_TARGET_SDK_VERSION "Android target SDK version" "29")
+  set(ANDROID_MIN_SDK_VERSION "21" CACHE STRING "Android minimum SDK version")
+  set(ANDROID_TARGET_SDK_VERSION "30" CACHE STRING "Android target SDK version")
 
   # Make sure to delete the "android-build" directory, which contains all the
   # build artefacts, and also the androiddeployqt/gradle artefacts
@@ -50,6 +65,8 @@ if (NOT ${PROJECT_NAME}-MultiAbiBuild)
   @QT_ANDROID_PACKAGE_SOURCE_DIR@
   @QT_ANDROID_VERSION_CODE@
   @QT_ANDROID_VERSION_NAME@
+  @QT_ANDROID_TARGET_SDK_VERSION@
+  @QT_ANDROID_MIN_SDK_VERSION@
   @QT_ANDROID_EXTRA_LIBS@
   @QT_QML_IMPORT_PATH@
   "ndk": "@ANDROID_NDK@",
@@ -57,6 +74,7 @@ if (NOT ${PROJECT_NAME}-MultiAbiBuild)
   "qml-root-path": "@CMAKE_CURRENT_SOURCE_DIR@",
   "qt": "@QT_DIR@",
   "sdk": "@ANDROID_SDK@",
+  "sdkBuildToolsRevision": "@ANDROID_SDK_BUILD_TOOLS_REVISION@",
   "stdcpp-path": "@ANDROID_TOOLCHAIN_ROOT@/sysroot/usr/lib/",
   "tool-prefix": "llvm",
   "toolchain-prefix": "llvm",
@@ -69,6 +87,12 @@ if (NOT ${PROJECT_NAME}-MultiAbiBuild)
 
   if(NOT ANDROID_SDK)
     get_filename_component(ANDROID_SDK ${ANDROID_NDK}/../ ABSOLUTE)
+  endif()
+
+  if("${ANDROID_SDK_BUILD_TOOLS_REVISION}" STREQUAL "")
+    qt_internal_get_highest_android_sdk_build_tools_revision(
+      ANDROID_SDK_BUILD_TOOLS_REVISION
+      "${ANDROID_SDK}/build-tools")
   endif()
 
   find_program(ANDROID_DEPLOY_QT androiddeployqt)
@@ -103,8 +127,8 @@ if (NOT ${PROJECT_NAME}-MultiAbiBuild)
   generate_json_variable(ANDROID_VERSION_NAME "android-version-name")
   generate_json_variable_list(ANDROID_EXTRA_LIBS "android-extra-libs")
   generate_json_variable_list(QML_IMPORT_PATH "qml-import-paths")
-  generate_json_variable_list(ANDROID_MIN_SDK_VERSION "android-min-sdk-version")
-  generate_json_variable_list(ANDROID_TARGET_SDK_VERSION "android-target-sdk-version")
+  generate_json_variable(ANDROID_MIN_SDK_VERSION "android-min-sdk-version")
+  generate_json_variable(ANDROID_TARGET_SDK_VERSION "android-target-sdk-version")
 
 
   configure_file(
@@ -123,24 +147,28 @@ if (NOT ${PROJECT_NAME}-MultiAbiBuild)
     set(android_deploy_qt_platform "--android-platform ${ANDROID_SDK_PLATFORM}")
   endif()
 
-  add_custom_target(apk
-    COMMAND ${CMAKE_COMMAND} -E env JAVA_HOME=${JAVA_HOME} ${ANDROID_DEPLOY_QT}
-       --input "${CMAKE_BINARY_DIR}/android_deployment_settings.json"
-       --output "${CMAKE_BINARY_DIR}/android-build"
-       --apk "${CMAKE_BINARY_DIR}/android-build/${PROJECT_NAME}.apk"
-       ${android_deploy_qt_platform}
-       ${android_deploy_qt_jdk}
-    VERBATIM)
+  if(NOT TARGET apk)
+    add_custom_target(apk
+      COMMAND ${CMAKE_COMMAND} -E env JAVA_HOME=${JAVA_HOME} ${ANDROID_DEPLOY_QT}
+         --input "${CMAKE_BINARY_DIR}/android_deployment_settings.json"
+         --output "${CMAKE_BINARY_DIR}/android-build"
+         --apk "${CMAKE_BINARY_DIR}/android-build/${PROJECT_NAME}.apk"
+         ${android_deploy_qt_platform}
+         ${android_deploy_qt_jdk}
+      VERBATIM)
+  endif()
 
-  add_custom_target(aab
-    COMMAND ${CMAKE_COMMAND} -E env JAVA_HOME=${JAVA_HOME} ${ANDROID_DEPLOY_QT}
-      --input "${CMAKE_BINARY_DIR}/android_deployment_settings.json"
-      --output "${CMAKE_BINARY_DIR}/android-build"
-      --apk "${CMAKE_BINARY_DIR}/android-build/${PROJECT_NAME}.apk"
-      --aab
-      ${android_deploy_qt_platform}
-      ${android_deploy_qt_jdk}
-   VERBATIM)
+  if(NOT TARGET aab)
+    add_custom_target(aab
+      COMMAND ${CMAKE_COMMAND} -E env JAVA_HOME=${JAVA_HOME} ${ANDROID_DEPLOY_QT}
+        --input "${CMAKE_BINARY_DIR}/android_deployment_settings.json"
+        --output "${CMAKE_BINARY_DIR}/android-build"
+        --apk "${CMAKE_BINARY_DIR}/android-build/${PROJECT_NAME}.apk"
+        --aab
+        ${android_deploy_qt_platform}
+        ${android_deploy_qt_jdk}
+     VERBATIM)
+  endif()
 
   include(ExternalProject)
   macro (setup_library library_name android_abi)

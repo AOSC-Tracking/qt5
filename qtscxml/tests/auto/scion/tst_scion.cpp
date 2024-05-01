@@ -269,16 +269,37 @@ void TestScion::compiled()
 
 static bool verifyStates(QScxmlStateMachine *stateMachine, const QJsonObject &stateDescription, const QString &key, int counter)
 {
+    const auto errorMessage = [&key, &counter](const QStringList& current,
+                                     const QStringList& expected, const QLatin1String& details) {
+        qWarning("Incorrect %s (%d)!", qPrintable(key), counter);
+        qWarning() << "Current configuration:" << current;
+        qWarning() << "Expected configuration:" << expected;
+        qWarning() << "Failed state read was done with:" << details;
+    };
+
+    // Verify that activeStateNames() matches the expectation
     auto current = stateMachine->activeStateNames();
     std::sort(current.begin(), current.end());
     auto expected = getStates(stateDescription, key);
-    if (current == expected)
-        return true;
+    if (current != expected) {
+        errorMessage(current, expected, QLatin1String("activeStateNames()"));
+        return false;
+    }
 
-    qWarning("Incorrect %s (%d)!", qPrintable(key), counter);
-    qWarning() << "Current configuration:" << current;
-    qWarning() << "Expected configuration:" << expected;
-    return false;
+    for (const auto& s : expected) {
+        // Verify that isActive(stateName) matches the expectation
+        if (!stateMachine->isActive(s)) {
+            errorMessage(current, expected, QLatin1String("isActive()"));
+            return false;
+        }
+        // Verify that the metaobject matches the expectation
+        const auto mo = stateMachine->metaObject();
+        if (!mo->property(mo->indexOfProperty(s.toLocal8Bit())).read(stateMachine).toBool()) {
+            errorMessage(current, expected, QLatin1String("metaobject read"));
+            return false;
+        }
+    }
+    return true;
 }
 
 static bool playEvent(QScxmlStateMachine *stateMachine, const QJsonObject &eventDescription, int counter)
@@ -344,11 +365,32 @@ static bool playEvent(QScxmlStateMachine *stateMachine, const QJsonObject &event
     });
     MySignalSpy triggerSpy(&trigger, SIGNAL(timeout()));
 
+    // Create a signal spy for each state we expect to be (de)activated in next transition.
+    const auto expectedActive = getStates(eventDescription, QLatin1String("nextConfiguration"));
+    std::list<std::unique_ptr<QSignalSpy>> stateSpies;
+    const auto mo = stateMachine->metaObject();
+
+    for (const auto& s : stateMachine->stateNames()) {
+        if (expectedActive.contains(s) == stateMachine->isActive(s))
+            continue;
+        // The state is expected to undergo an activation change, create a signal spy
+        const auto changedSignal = s + QLatin1String("Changed(bool)");
+        auto signalIndex = mo->indexOfSignal(changedSignal.toUtf8().constData());
+        stateSpies.push_back(std::unique_ptr<QSignalSpy>(
+                                 new QSignalSpy(stateMachine, mo->method(signalIndex))));
+    }
+
     stateMachine->submitEvent(e);
 
     if (!triggerSpy.fastWait()) {
         qWarning() << "State machine did not reach a stable state.";
     } else if (verifyStates(stateMachine, eventDescription, QLatin1String("nextConfiguration"), counter)) {
+        for (const auto& spy : stateSpies) {
+            if (spy->size() != 1) {
+                qWarning() << "Signal error for:" << spy->signal() << ", size:" << spy->size();
+                return false;
+            }
+        }
         return true;
     }
 

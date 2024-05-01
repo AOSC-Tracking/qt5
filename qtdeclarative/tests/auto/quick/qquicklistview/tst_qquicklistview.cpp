@@ -33,6 +33,8 @@
 #include <QtGui/QStyleHints>
 #include <QtQuick/qquickview.h>
 #include <QtQuickTest/QtQuickTest>
+#include <QStringListModel>
+#include <QQmlApplicationEngine>
 #include <QtQml/qqmlengine.h>
 #include <QtQml/qqmlcontext.h>
 #include <QtQml/qqmlexpression.h>
@@ -299,6 +301,12 @@ private slots:
     void requiredObjectListModel();
     void clickHeaderAndFooterWhenClip();
     void animatedDelegate();
+    void dragDelegateWithMouseArea();
+    void dragDelegateWithMouseArea_data();
+
+
+    void singletonModelLifetime();
+    void QTBUG_92809();
 
 private:
     template <class T> void items(const QUrl &source);
@@ -10107,6 +10115,139 @@ void tst_QQuickListView::animatedDelegate()
         QMetaObject::invokeMethod(window->rootObject(), "refreshModel");
         QTest::qWait(10);
     }
+}
+
+static void dragListView(QWindow *window, QPoint *startPos, const QPoint &delta)
+{
+    auto drag_helper = [&](QWindow *window, QPoint *startPos, const QPoint &d) {
+        QPoint pos = *startPos;
+        const int dragDistance = d.manhattanLength();
+        const QPoint unitVector(qBound(-1, d.x(), 1), qBound(-1, d.y(), 1));
+        for (int i = 0; i < dragDistance; ++i) {
+            QTest::mouseMove(window, pos);
+            pos += unitVector;
+        }
+        // Move to the final position
+        pos = *startPos + d;
+        QTest::mouseMove(window, pos);
+        *startPos = pos;
+    };
+
+    if (delta.manhattanLength() == 0)
+        return;
+    const int dragThreshold = QGuiApplication::styleHints()->startDragDistance();
+    const QPoint unitVector(qBound(-1, delta.x(), 1), qBound(-1, delta.y(), 1));
+    // go just beyond the drag theshold
+    drag_helper(window, startPos, unitVector * (dragThreshold + 1));
+    drag_helper(window, startPos, unitVector);
+
+    // next drag will actually scroll the listview
+    drag_helper(window, startPos, delta);
+}
+
+void tst_QQuickListView::dragDelegateWithMouseArea()
+{
+    QFETCH(QQuickItemView::LayoutDirection, layoutDirection);
+
+    QScopedPointer<QQuickView> window(createView());
+    QVERIFY(window);
+    window->setSource(testFileUrl("delegateWithMouseArea2.qml"));
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window.data()));
+
+    QQuickListView *listview = findItem<QQuickListView>(window->rootObject(), "list");
+    QVERIFY(listview != nullptr);
+
+    const bool horizontal = layoutDirection < QQuickItemView::VerticalTopToBottom;
+    listview->setOrientation(horizontal ? QQuickListView::Horizontal : QQuickListView::Vertical);
+
+    if (horizontal)
+        listview->setLayoutDirection(static_cast<Qt::LayoutDirection>(layoutDirection));
+    else
+        listview->setVerticalLayoutDirection(static_cast<QQuickItemView::VerticalLayoutDirection>(layoutDirection));
+
+    QVERIFY(QQuickTest::qWaitForItemPolished(listview));
+
+    auto contentPosition = [&](QQuickListView *listview) {
+        return (listview->orientation() == QQuickListView::Horizontal ? listview->contentX(): listview->contentY());
+    };
+
+    qreal expectedContentPosition = contentPosition(listview);
+    QPoint startPos = (QPointF(listview->width(), listview->height())/2).toPoint();
+    QTest::mousePress(window.data(), Qt::LeftButton, Qt::NoModifier, startPos, 200);
+
+    QPoint dragDelta(0, -10);
+
+    if (layoutDirection == QQuickItemView::RightToLeft || layoutDirection == QQuickItemView::VerticalBottomToTop)
+        dragDelta = -dragDelta;
+    expectedContentPosition -= dragDelta.y();
+    if (horizontal)
+        dragDelta = dragDelta.transposed();
+
+    dragListView(window.data(), &startPos, dragDelta);
+
+    QTest::mouseRelease(window.data(), Qt::LeftButton, Qt::NoModifier, startPos, 200);     // Wait 200 ms before we release to avoid trigger a flick
+
+    // wait for the "fixup" animation to finish
+    QVERIFY(QTest::qWaitFor([&]()
+        { return !listview->isMoving();}
+    ));
+
+    QCOMPARE(contentPosition(listview), expectedContentPosition);
+}
+
+void tst_QQuickListView::dragDelegateWithMouseArea_data()
+{
+    QTest::addColumn<QQuickItemView::LayoutDirection>("layoutDirection");
+
+    for (int layDir = QQuickItemView::LeftToRight; layDir <= (int)QQuickItemView::VerticalBottomToTop; layDir++) {
+        const char *enumValueName = QMetaEnum::fromType<QQuickItemView::LayoutDirection>().valueToKey(layDir);
+        QTest::newRow(enumValueName) << static_cast<QQuickItemView::LayoutDirection>(layDir);
+    }
+}
+
+class SingletonModel : public QStringListModel
+{
+    Q_OBJECT
+public:
+    SingletonModel(QObject* parent = nullptr) : QStringListModel(parent) { }
+};
+
+void tst_QQuickListView::singletonModelLifetime()
+{
+    // this does not really test any functionality of listview, but we do not have a good way
+    // to unit test QQmlAdaptorModel in isolation.
+    qmlRegisterSingletonType<SingletonModel>("test", 1, 0, "SingletonModel",
+            [](QQmlEngine* , QJSEngine*) -> QObject* { return new SingletonModel; });
+
+    QQmlApplicationEngine engine(testFile("singletonModelLifetime.qml"));
+    // needs event loop iteration for callLater to execute
+    QTRY_VERIFY(engine.rootObjects().first()->property("alive").toBool());
+}
+
+void tst_QQuickListView::QTBUG_92809()
+{
+    QScopedPointer<QQuickView> window(createView());
+    QTRY_VERIFY(window);
+    window->setSource(testFileUrl("qtbug_92809.qml"));
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window.data()));
+
+    QQuickListView *listview = findItem<QQuickListView>(window->rootObject(), "list");
+    QTRY_VERIFY(listview != nullptr);
+    QVERIFY(QQuickTest::qWaitForItemPolished(listview));
+    listview->setCurrentIndex(1);
+    QVERIFY(QQuickTest::qWaitForItemPolished(listview));
+    listview->setCurrentIndex(2);
+    QVERIFY(QQuickTest::qWaitForItemPolished(listview));
+    listview->setCurrentIndex(3);
+    QVERIFY(QQuickTest::qWaitForItemPolished(listview));
+    QTest::qWait(500);
+    listview->setCurrentIndex(10);
+    QVERIFY(QQuickTest::qWaitForItemPolished(listview));
+    QTest::qWait(500);
+    int currentIndex = listview->currentIndex();
+    QTRY_COMPARE(currentIndex, 9);
 }
 
 QTEST_MAIN(tst_QQuickListView)

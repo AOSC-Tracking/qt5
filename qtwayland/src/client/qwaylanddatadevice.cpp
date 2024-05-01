@@ -124,6 +124,12 @@ bool QWaylandDataDevice::startDrag(QMimeData *mimeData, Qt::DropActions supporte
         return false;
     }
 
+    // dragging data without mimetypes is a legal operation in Qt terms
+    // but Wayland uses a mimetype to determine if a drag is accepted or not
+    // In this rare case, insert a placeholder
+    if (mimeData->formats().isEmpty())
+        mimeData->setData(QString::fromLatin1("application/x-qt-avoid-empty-placeholder"), QByteArray("1"));
+
     m_dragSource.reset(new QWaylandDataSource(m_display->dndSelectionHandler(), mimeData));
 
     if (wl_data_device_get_version(object()) >= 3)
@@ -132,6 +138,9 @@ bool QWaylandDataDevice::startDrag(QMimeData *mimeData, Qt::DropActions supporte
     connect(m_dragSource.data(), &QWaylandDataSource::cancelled, this, &QWaylandDataDevice::dragSourceCancelled);
     connect(m_dragSource.data(), &QWaylandDataSource::dndResponseUpdated, this, [this](bool accepted, Qt::DropAction action) {
             auto drag = static_cast<QWaylandDrag *>(QGuiApplicationPrivate::platformIntegration()->drag());
+            if (!drag->currentDrag()) {
+                return;
+            }
             // in old versions drop action is not set, so we guess
             if (wl_data_source_get_version(m_dragSource->object()) < 3) {
                 drag->setResponse(accepted);
@@ -296,6 +305,7 @@ void QWaylandDataDevice::selectionSourceCancelled()
 #if QT_CONFIG(draganddrop)
 void QWaylandDataDevice::dragSourceCancelled()
 {
+    static_cast<QWaylandDrag *>(QGuiApplicationPrivate::platformIntegration()->drag())->finishDrag();
     m_dragSource.reset();
 }
 
@@ -343,3 +353,5 @@ int QWaylandDataDevice::dropActionsToWl(Qt::DropActions actions)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qwaylanddatadevice_p.cpp"

@@ -200,7 +200,7 @@ OtoolInfo findDependencyInfo(const QString &binaryPath)
             info.compatibilityVersion = QVersionNumber::fromString(match.captured(2));
             info.currentVersion = QVersionNumber::fromString(match.captured(3));
         } else {
-            LogError() << "Could not parse otool output line:" << outputLines.first();
+            LogDebug() << "Could not parse otool output line:" << outputLines.first();
         }
         outputLines.removeFirst();
     }
@@ -208,13 +208,15 @@ OtoolInfo findDependencyInfo(const QString &binaryPath)
     for (const QString &outputLine : outputLines) {
         const auto match = regexp.match(outputLine);
         if (match.hasMatch()) {
+            if (match.captured(1) == info.installName)
+                continue; // Another arch reference to the same binary
             DylibInfo dylib;
             dylib.binaryPath = match.captured(1);
             dylib.compatibilityVersion = QVersionNumber::fromString(match.captured(2));
             dylib.currentVersion = QVersionNumber::fromString(match.captured(3));
             info.dependencies << dylib;
         } else {
-            LogError() << "Could not parse otool output line:" << outputLine;
+            LogDebug() << "Could not parse otool output line:" << outputLine;
         }
     }
 
@@ -1289,7 +1291,7 @@ bool deployQmlImports(const QString &appBundlePath, DeploymentInfo deploymentInf
         LogError() << "Could not start qmlimpoortscanner. Process error is" << qmlImportScanner.errorString();
         return false;
     }
-    qmlImportScanner.waitForFinished();
+    qmlImportScanner.waitForFinished(-1);
 
     // log qmlimportscanner errors
     qmlImportScanner.setReadChannel(QProcess::StandardError);

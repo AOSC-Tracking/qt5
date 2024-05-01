@@ -1395,8 +1395,7 @@ void ClangCodeParser::buildPCH()
             args_.push_back("-xc++");
             CXTranslationUnit tu;
             QString tmpHeader = pchFileDir_->path() + "/" + module;
-            QFile tmpHeaderFile(tmpHeader);
-            if (tmpHeaderFile.open(QIODevice::Text | QIODevice::WriteOnly)) {
+            { QFile tmpHeaderFile(tmpHeader); if (tmpHeaderFile.open(QIODevice::Text | QIODevice::WriteOnly)) {
                 QTextStream out(&tmpHeaderFile);
                 if (header.isEmpty()) {
                     for (auto it = allHeaders_.constKeyValueBegin();
@@ -1421,8 +1420,7 @@ void ClangCodeParser::buildPCH()
                             out << line << "\n";
                     }
                 }
-                tmpHeaderFile.close();
-            }
+            } }
             if (printParsingErrors_ == 0)
                 qCWarning(lcQdoc) << "clang not printing errors; include paths were guessed";
             CXErrorCode err =

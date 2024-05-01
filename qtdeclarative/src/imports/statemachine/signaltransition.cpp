@@ -166,12 +166,16 @@ void SignalTransition::connectTriggered()
 
     Q_ASSERT(m_bindings.count() == 1);
     const QV4::CompiledData::Binding *binding = m_bindings.at(0);
-    Q_ASSERT(binding->type == QV4::CompiledData::Binding::Type_Script);
+    Q_ASSERT(binding->type() == QV4::CompiledData::Binding::Type_Script);
 
     QV4::ExecutionEngine *jsEngine = QQmlEngine::contextForObject(this)->engine()->handle();
     QV4::Scope scope(jsEngine);
     QV4::Scoped<QV4::QObjectMethod> qobjectSignal(scope, QJSValuePrivate::convertedToValue(jsEngine, m_signal));
-    Q_ASSERT(qobjectSignal);
+    if (!qobjectSignal) {
+        m_signalExpression.take(nullptr);
+        return;
+    }
+
     QMetaMethod metaMethod = target->metaObject()->method(qobjectSignal->methodIndex());
     int signalIndex = QMetaObjectPrivate::signalIndex(metaMethod);
 
@@ -198,7 +202,7 @@ void SignalTransitionParser::verifyBindings(const QQmlRefPointer<QV4::Executable
             return;
         }
 
-        if (binding->type != QV4::CompiledData::Binding::Type_Script) {
+        if (binding->type() != QV4::CompiledData::Binding::Type_Script) {
             error(binding, SignalTransition::tr("SignalTransition: script expected"));
             return;
         }

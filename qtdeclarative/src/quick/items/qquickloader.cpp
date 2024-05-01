@@ -439,9 +439,8 @@ void QQuickLoader::loadFromSource()
     }
 
     if (isComponentComplete()) {
-        QQmlComponent::CompilationMode mode = d->asynchronous ? QQmlComponent::Asynchronous : QQmlComponent::PreferSynchronous;
         if (!d->component)
-            d->component.setObject(new QQmlComponent(qmlEngine(this), d->source, mode, this), this);
+            d->createComponent();
         d->load();
     }
 }
@@ -806,11 +805,8 @@ void QQuickLoader::componentComplete()
     Q_D(QQuickLoader);
     QQuickItem::componentComplete();
     if (active()) {
-        if (d->loadingFromSource) {
-            QQmlComponent::CompilationMode mode = d->asynchronous ? QQmlComponent::Asynchronous : QQmlComponent::PreferSynchronous;
-            if (!d->component)
-                d->component.setObject(new QQmlComponent(qmlEngine(this), d->source, mode, this), this);
-        }
+        if (d->loadingFromSource && !d->component)
+            d->createComponent();
         d->load();
     }
 }
@@ -946,7 +942,7 @@ void QQuickLoaderPrivate::_q_updateSize(bool loaderGeometryChanged)
 }
 
 /*!
-    \qmlproperty object QtQuick::Loader::item
+    \qmlproperty QtObject QtQuick::Loader::item
     This property holds the top-level object that is currently loaded.
 
     Since \c {QtQuick 2.0}, Loader can load any object type.
@@ -1042,6 +1038,22 @@ void QQuickLoaderPrivate::updateStatus()
         status = newStatus;
         emit q->statusChanged();
     }
+}
+
+void QQuickLoaderPrivate::createComponent()
+{
+    Q_Q(QQuickLoader);
+    const QQmlComponent::CompilationMode mode = asynchronous
+            ? QQmlComponent::Asynchronous
+            : QQmlComponent::PreferSynchronous;
+    if (QQmlContext *context = qmlContext(q)) {
+        if (QQmlEngine *engine = context->engine()) {
+            component.setObject(new QQmlComponent(engine, source, mode, q), q);
+            return;
+        }
+    }
+
+    qmlWarning(q) << "createComponent: Cannot find a QML engine.";
 }
 
 #include <moc_qquickloader_p.cpp>

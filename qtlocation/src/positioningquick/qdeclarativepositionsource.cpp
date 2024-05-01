@@ -227,9 +227,11 @@ void QDeclarativePositionSource::tryAttach(const QString &newName, bool useFallb
         m_positionSource->setPreferredPositioningMethods(
             static_cast<QGeoPositionInfoSource::PositioningMethods>(int(m_preferredPositioningMethods)));
 
-        const QGeoPositionInfo &lastKnown = m_positionSource->lastKnownPosition();
-        if (lastKnown.isValid())
-            setPosition(lastKnown);
+        if (m_startPending) {
+            const QGeoPositionInfo &lastKnown = m_positionSource->lastKnownPosition();
+            if (lastKnown.isValid())
+                setPosition(lastKnown);
+        }
     } else if (m_active) {
         m_active = false;
         emit activeChanged();
@@ -653,6 +655,8 @@ QDeclarativePositionSource::PositioningMethods QDeclarativePositionSource::prefe
 
 void QDeclarativePositionSource::start()
 {
+    m_startPending = false;
+
     if (m_positionSource)
         m_positionSource->startUpdates();
 
@@ -725,10 +729,12 @@ void QDeclarativePositionSource::setActive(bool active)
     if (active == m_active)
         return;
 
-    if (active)
+    if (active) {
+        m_startPending = true;
         QTimer::singleShot(0, this, SLOT(start())); // delay ensures all properties have been set
-    else
+    } else {
         stop();
+    }
 }
 
 bool QDeclarativePositionSource::isActive() const

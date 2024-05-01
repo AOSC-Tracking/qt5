@@ -74,10 +74,13 @@ QT_BEGIN_NAMESPACE
 
 using namespace QWindowsUiAutomation;
 
+QMutex QWindowsUiaMainProvider::m_mutex;
 
 // Returns a cached instance of the provider for a specific acessible interface.
 QWindowsUiaMainProvider *QWindowsUiaMainProvider::providerForAccessible(QAccessibleInterface *accessible)
 {
+    QMutexLocker locker(&m_mutex);
+
     if (!accessible)
         return nullptr;
 
@@ -108,19 +111,11 @@ void QWindowsUiaMainProvider::notifyFocusChange(QAccessibleEvent *event)
 {
     if (QAccessibleInterface *accessible = event->accessibleInterface()) {
         // If this is a table/tree/list, raise event for the focused cell/item instead.
-        if (accessible->tableInterface()) {
-            int count = accessible->childCount();
-            for (int i = 0; i < count; ++i) {
-                QAccessibleInterface *item = accessible->child(i);
-                if (item && item->isValid() && item->state().focused) {
-                    accessible = item;
-                    break;
-                }
-            }
-        }
-        if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
+        if (accessible->tableInterface())
+            if (QAccessibleInterface *child = accessible->focusChild())
+                accessible = child;
+        if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible))
             QWindowsUiaWrapper::instance()->raiseAutomationEvent(provider, UIA_AutomationFocusChangedEventId);
-        }
     }
 }
 
@@ -177,27 +172,11 @@ void QWindowsUiaMainProvider::notifyValueChange(QAccessibleValueChangeEvent *eve
         }
         if (event->value().type() == QVariant::String) {
             if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
-
-                // Tries to notify the change using UiaRaiseNotificationEvent(), which is only available on
-                // Windows 10 version 1709 or newer. Otherwise uses UiaRaiseAutomationPropertyChangedEvent().
-
-                BSTR displayString = bStrFromQString(event->value().toString());
-                BSTR activityId = bStrFromQString(QString());
-
-                HRESULT hr = QWindowsUiaWrapper::instance()->raiseNotificationEvent(provider, NotificationKind_Other,
-                                                                                    NotificationProcessing_ImportantMostRecent,
-                                                                                    displayString, activityId);
-
-                ::SysFreeString(displayString);
-                ::SysFreeString(activityId);
-
-                if (hr == static_cast<HRESULT>(UIA_E_NOTSUPPORTED)) {
-                    VARIANT oldVal, newVal;
-                    clearVariant(&oldVal);
-                    setVariantString(event->value().toString(), &newVal);
-                    QWindowsUiaWrapper::instance()->raiseAutomationPropertyChangedEvent(provider, UIA_ValueValuePropertyId, oldVal, newVal);
-                    ::SysFreeString(newVal.bstrVal);
-                }
+                // Notifies changes in string values.
+                VARIANT oldVal, newVal;
+                clearVariant(&oldVal);
+                setVariantString(event->value().toString(), &newVal);
+                QWindowsUiaWrapper::instance()->raiseAutomationPropertyChangedEvent(provider, UIA_ValueValuePropertyId, oldVal, newVal);
             }
         } else if (QAccessibleValueInterface *valueInterface = accessible->valueInterface()) {
             if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
@@ -214,12 +193,16 @@ void QWindowsUiaMainProvider::notifyValueChange(QAccessibleValueChangeEvent *eve
 void QWindowsUiaMainProvider::notifyNameChange(QAccessibleEvent *event)
 {
     if (QAccessibleInterface *accessible = event->accessibleInterface()) {
-        if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
-            VARIANT oldVal, newVal;
-            clearVariant(&oldVal);
-            setVariantString(accessible->text(QAccessible::Name), &newVal);
-            QWindowsUiaWrapper::instance()->raiseAutomationPropertyChangedEvent(provider, UIA_NamePropertyId, oldVal, newVal);
-            ::SysFreeString(newVal.bstrVal);
+        // Restrict notification to combo boxes, which need it for accessibility,
+        // in order to avoid slowdowns with unnecessary notifications.
+        if (accessible->role() == QAccessible::ComboBox) {
+            if (QWindowsUiaMainProvider *provider = providerForAccessible(accessible)) {
+                VARIANT oldVal, newVal;
+                clearVariant(&oldVal);
+                setVariantString(accessible->text(QAccessible::Name), &newVal);
+                QWindowsUiaWrapper::instance()->raiseAutomationPropertyChangedEvent(provider, UIA_NamePropertyId, oldVal, newVal);
+                ::SysFreeString(newVal.bstrVal);
+            }
         }
     }
 }
@@ -275,6 +258,8 @@ ULONG QWindowsUiaMainProvider::AddRef()
 
 ULONG STDMETHODCALLTYPE QWindowsUiaMainProvider::Release()
 {
+    QMutexLocker locker(&m_mutex);
+
     if (!--m_ref) {
         delete this;
         return 0;

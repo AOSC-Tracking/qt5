@@ -16,6 +16,7 @@ SOURCES += \
     $$PWD/libtiff/libtiff/tif_fax3sm.c \
     $$PWD/libtiff/libtiff/tif_flush.c \
     $$PWD/libtiff/libtiff/tif_getimage.c \
+    $$PWD/libtiff/libtiff/tif_hash_set.c \
     $$PWD/libtiff/libtiff/tif_luv.c \
     $$PWD/libtiff/libtiff/tif_lzw.c \
     $$PWD/libtiff/libtiff/tif_next.c \
@@ -32,11 +33,9 @@ SOURCES += \
     $$PWD/libtiff/libtiff/tif_version.c \
     $$PWD/libtiff/libtiff/tif_warning.c \
     $$PWD/libtiff/libtiff/tif_write.c \
-    $$PWD/libtiff/libtiff/tif_zip.c \
-    $$PWD/libtiff/port/snprintf.c
+    $$PWD/libtiff/libtiff/tif_zip.c
 
 win32:        SOURCES += $$PWD/libtiff/libtiff/tif_win32.c
 else:         SOURCES += $$PWD/libtiff/libtiff/tif_unix.c
-android:      SOURCES += $$PWD/libtiff/port/lfind.c
 
 include($$PWD/zlib_dependency.pri)

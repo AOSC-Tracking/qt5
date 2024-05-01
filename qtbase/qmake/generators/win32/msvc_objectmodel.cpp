@@ -40,36 +40,42 @@ using namespace QMakeInternal;
 
 QT_BEGIN_NAMESPACE
 
-static DotNET vsVersionFromString(const char *versionString)
-{
-    struct VSVersionMapping
-    {
-        const char *str;
-        DotNET version;
-    };
-    static VSVersionMapping mapping[] = {
-        { "7.0", NET2002 },
-        { "7.1", NET2003 },
-        { "8.0", NET2005 },
-        { "9.0", NET2008 },
-        { "10.0", NET2010 },
-        { "11.0", NET2012 },
-        { "12.0", NET2013 },
-        { "14.0", NET2015 },
-        { "15.0", NET2017 },
-        { "16.0", NET2019 }
-    };
-    DotNET result = NETUnknown;
-    for (const auto entry : mapping) {
-        if (strcmp(entry.str, versionString) == 0)
-            return entry.version;
-    }
-    return result;
-}
-
 DotNET vsVersionFromString(const ProString &versionString)
 {
-    return vsVersionFromString(versionString.toLatin1().constData());
+    int idx = versionString.indexOf(QLatin1Char('.'));
+    if (idx == -1)
+        return NETUnknown;
+
+    QStringView versionView = versionString.toQStringView();
+    int versionMajor = versionView.left(idx).toInt();
+    int versionMinor = versionView.mid(idx + 1).toInt();
+
+    if (versionMajor == 17)
+        return NET2022;
+    if (versionMajor == 16)
+        return NET2019;
+    if (versionMajor == 15)
+        return NET2017;
+    if (versionMajor == 14)
+        return NET2015;
+    if (versionMajor == 12)
+        return NET2013;
+    if (versionMajor == 11)
+        return NET2012;
+    if (versionMajor == 10)
+        return NET2010;
+    if (versionMajor == 9)
+        return NET2008;
+    if (versionMajor == 8)
+        return NET2005;
+    if (versionMajor == 7) {
+        if (versionMinor == 0)
+            return NET2002;
+        if (versionMinor == 1)
+            return NET2003;
+    }
+
+    return NETUnknown;
 }
 
 // XML Tags ---------------------------------------------------------
@@ -404,7 +410,7 @@ VCCLCompilerTool::VCCLCompilerTool()
         CompileForArchitecture(archUnknown),
         InterworkCalls(unset),
         EnablePREfast(unset),
-        DisplayFullPaths(unset),
+        DisplayFullPaths(_False),
         MultiProcessorCompilation(unset),
         GenerateXMLDocumentationFiles(unset),
         CreateHotpatchableImage(unset)
@@ -1147,12 +1153,39 @@ bool VCCLCompilerTool::parseOption(const char* option)
             ShowIncludes = _True;
             break;
         }
-        if (strlen(option) > 8 && second == 't' && third == 'd') {
-            const QString version = option + 8;
-            static const QStringList knownVersions = { "14", "17", "latest" };
-            if (knownVersions.contains(version)) {
-                LanguageStandard = "stdcpp" + version;
-                break;
+        if (strlen(option) > 7 && second == 't' && third == 'd' && fourth == ':') {
+            static const QRegExp rex("(c(?:\\+\\+)?)(.+)");
+            if (rex.exactMatch(option + 5)) {
+                QString *var = nullptr;
+                const QStringList *knownVersions = nullptr;
+                QString valuePrefix;
+                auto lang = rex.cap(1);
+                auto version = rex.cap(2);
+                if (lang == QStringLiteral("c++")) {
+                    // Turn /std:c++17 into <LanguageStandard>stdcpp17</LanguageStandard>
+                    static const QStringList knownCxxVersions = {
+                        "14",
+                        "17",
+                        "20",
+                        "latest"
+                    };
+                    var = &LanguageStandard;
+                    knownVersions = &knownCxxVersions;
+                    valuePrefix = "stdcpp";
+                } else if (lang == QStringLiteral("c")) {
+                    // Turn /std:c17 into <LanguageStandard_C>stdc17</LanguageStandard_C>
+                    static const QStringList knownCVersions = {
+                        "11",
+                        "17"
+                    };
+                    var = &LanguageStandard_C;
+                    knownVersions = &knownCVersions;
+                    valuePrefix = "stdc";
+                }
+                if (var && knownVersions->contains(version)) {
+                    *var = valuePrefix + version;
+                    break;
+                }
             }
         }
         found = false; break;
@@ -1470,10 +1503,22 @@ bool VCLinkerTool::parseOption(const char* option)
         }else
             EnableUAC = _True;
         break;
-    case 0x3389797: // /DEBUG[:FASTLINK]
-        GenerateDebugInformation = _True;
-        if (config->CompilerVersion >= NET2015 && strcmp(option + 7, "FASTLINK") == 0)
-            DebugInfoOption = linkerDebugOptionFastLink;
+    case 0x3389797: // /DEBUG[:{FASTLINK|FULL|NONE}]
+        if (config->CompilerVersion >= NET2015) {
+            const char *str = option + 7;
+            if (qstricmp(str, "fastlink") == 0)
+                DebugInfoOption = linkerDebugOptionFastLink;
+            else if (qstricmp(str, "full") == 0)
+                DebugInfoOption = linkerDebugOptionFull;
+            else if (qstricmp(str, "none") == 0)
+                DebugInfoOption = linkerDebugOptionNone;
+            else
+                AdditionalOptions += option;
+        }
+        if (DebugInfoOption == linkerDebugOptionNone)
+            GenerateDebugInformation = _False;
+        else
+            GenerateDebugInformation = _True;
         break;
     case 0x0033896: // /DEF:filename
         ModuleDefinitionFile = option+5;
@@ -1560,24 +1605,28 @@ bool VCLinkerTool::parseOption(const char* option)
     case 0x0d745c8: // /LIBPATH:dir
         AdditionalLibraryDirectories += option+9;
         break;
-    case 0x0341877: // /LTCG[:NOSTATUS|:STATUS]
-        config->WholeProgramOptimization = _True;
-        if (config->CompilerVersion >= NET2005) {
-            LinkTimeCodeGeneration = optLTCGEnabled;
-            if(*(option+5) == ':') {
-                const char* str = option+6;
-                if (*str == 'S')
-                    ShowProgress = linkProgressAll;
-                else if (qstricmp(str, "pginstrument") == 0)
-                    LinkTimeCodeGeneration = optLTCGInstrument;
-                else if (qstricmp(str, "pgoptimize") == 0)
-                    LinkTimeCodeGeneration = optLTCGOptimize;
-                else if (qstricmp(str, "pgupdate") == 0)
-                    LinkTimeCodeGeneration = optLTCGUpdate;
-            }
-        } else {
-            AdditionalOptions.append(option);
+    case 0x0341877: // /LTCG[:{INCREMENTAL|NOSTATUS|STATUS|OFF}]
+        //             /LTCG:{PGINSTRUMENT|PGOPTIMIZE|PGUPDATE}
+        LinkTimeCodeGeneration = optLTCGEnabled;
+        if (*(option + 5) == ':') {
+            const char* str = option + 6;
+            if (qstricmp(str, "status") == 0)
+                ShowProgress = linkProgressAll;
+            else if (qstricmp(str, "off") == 0)
+                LinkTimeCodeGeneration = optLTCGDefault;
+            else if (qstricmp(str, "incremental") == 0)
+                LinkTimeCodeGeneration = optLTCGIncremental;
+            else if (qstricmp(str, "pginstrument") == 0)
+                LinkTimeCodeGeneration = optLTCGInstrument;
+            else if (qstricmp(str, "pgoptimize") == 0)
+                LinkTimeCodeGeneration = optLTCGOptimize;
+            else if (qstricmp(str, "pgupdate") == 0)
+                LinkTimeCodeGeneration = optLTCGUpdate;
+            else
+                AdditionalOptions.append(option);
         }
+        if (LinkTimeCodeGeneration != optLTCGDefault)
+            config->WholeProgramOptimization = _True;
         break;
     case 0x379ED25:
     case 0x157cf65: // /MACHINE:{AM33|ARM|CEE|IA64|X86|M32R|MIPS|MIPS16|MIPSFPU|MIPSFPU16|MIPSR41XX|PPC|SH3|SH4|SH5|THUMB|TRICORE}
@@ -2405,6 +2454,7 @@ bool VCFilter::addExtraCompiler(const VCFilterFile &info)
                 cmd_name = cmd.left(space);
             else
                 cmd_name = cmd;
+            cmd_name = cmd_name.trimmed();
         }
 
         // Fixify paths

@@ -110,13 +110,21 @@ void RealtimeAudioDestinationHandler::SetChannelCount(
   uint32_t old_channel_count = this->ChannelCount();
   AudioHandler::SetChannelCount(channel_count, exception_state);
 
-  // Stop, re-create and start the destination to apply the new channel count.
-  if (this->ChannelCount() != old_channel_count &&
-      !exception_state.HadException()) {
-    StopPlatformDestination();
-    CreatePlatformDestination();
-    StartPlatformDestination();
+  // After the context is closed, changing channel count will be ignored
+  // because it will trigger the recreation of the platform destination. This
+  // in turn can activate the audio rendering thread.
+  AudioContext* context = static_cast<AudioContext*>(Context());
+  CHECK(context);
+  if (context->ContextState() == AudioContext::kClosed ||
+      ChannelCount() == old_channel_count ||
+      exception_state.HadException()) {
+    return;
   }
+
+  // Stop, re-create and start the destination to apply the new channel count.
+  StopPlatformDestination();
+  CreatePlatformDestination();
+  StartPlatformDestination();
 }
 
 void RealtimeAudioDestinationHandler::StartRendering() {
@@ -342,4 +350,16 @@ RealtimeAudioDestinationNode* RealtimeAudioDestinationNode::Create(
       *context, latency_hint, sample_rate);
 }
 
-}  // namespace blink
+void RealtimeAudioDestinationHandler::PrepareTaskRunnerForWorklet() {
+  DCHECK(IsMainThread());
+  DCHECK_EQ(Context()->ContextState(), BaseAudioContext::kSuspended);
+  DCHECK(Context()->audioWorklet());
+  DCHECK(Context()->audioWorklet()->IsReady());
+
+  platform_destination_->SetWorkletTaskRunner(
+      Context()->audioWorklet()->GetMessagingProxy()
+          ->GetBackingWorkerThread()
+          ->GetTaskRunner(TaskType::kInternalMediaRealTime));
+}
+
+} // namespace blink

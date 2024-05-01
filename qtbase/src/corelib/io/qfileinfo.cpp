@@ -294,6 +294,11 @@ QDateTime &QFileInfoPrivate::getFileTime(QAbstractFileEngine::FileTime request) 
 
     \snippet ntfsp.cpp 1
 
+    \note Since this is a non-atomic global variable, it is only safe
+    to increment or decrement \c qt_ntfs_permission_lookup before any
+    threads other than the main thread have started or after every thread
+    other than the main thread has ended.
+
     \section1 Performance Issues
 
     Some of QFileInfo's functions query the file system, but for
@@ -311,6 +316,10 @@ QDateTime &QFileInfoPrivate::getFileTime(QAbstractFileEngine::FileTime request) 
     refreshes the file information: refresh(). If you want to switch
     off a QFileInfo's caching and force it to access the file system
     every time you request information from it call setCaching(false).
+
+    \section1 Platform Specific Issues
+
+    \include android-content-uri-limitations.qdocinc
 
     \sa QDir, QFile
 */
@@ -767,7 +776,9 @@ QString QFileInfo::fileName() const
     Q_D(const QFileInfo);
     if (d->isDefaultConstructed)
         return QLatin1String("");
-    return d->fileEntry.fileName();
+    if (!d->fileEngine)
+        return d->fileEntry.fileName();
+    return d->fileEngine->fileName(QAbstractFileEngine::BaseName);
 }
 
 /*!
@@ -811,7 +822,9 @@ QString QFileInfo::baseName() const
     Q_D(const QFileInfo);
     if (d->isDefaultConstructed)
         return QLatin1String("");
-    return d->fileEntry.baseName();
+    if (!d->fileEngine)
+            return d->fileEntry.baseName();
+    return QFileSystemEntry(d->fileEngine->fileName(QAbstractFileEngine::BaseName)).baseName();
 }
 
 /*!
@@ -830,7 +843,10 @@ QString QFileInfo::completeBaseName() const
     Q_D(const QFileInfo);
     if (d->isDefaultConstructed)
         return QLatin1String("");
-    return d->fileEntry.completeBaseName();
+    if (!d->fileEngine)
+        return d->fileEntry.completeBaseName();
+    const QString fileEngineBaseName = d->fileEngine->fileName(QAbstractFileEngine::BaseName);
+    return QFileSystemEntry(fileEngineBaseName).completeBaseName();
 }
 
 /*!
@@ -1069,8 +1085,8 @@ bool QFileInfo::isBundle() const
 }
 
 /*!
-    Returns \c true if this object points to a symbolic link or shortcut;
-    otherwise returns \c false.
+    Returns \c true if this object points to a symbolic link, shortcut,
+    or alias; otherwise returns \c false.
 
     Symbolic links exist on Unix (including \macos and iOS) and Windows
     and are typically created by the \c{ln -s} or \c{mklink} commands,
@@ -1078,8 +1094,9 @@ bool QFileInfo::isBundle() const
     the \l{symLinkTarget()}{link's target}.
 
     In addition, true will be returned for shortcuts (\c *.lnk files) on
-    Windows. This behavior is deprecated and will likely change in a future
-    version of Qt. Opening those will open the \c .lnk file itself.
+    Windows, and aliases on \macos. This behavior is deprecated and will
+    likely change in a future version of Qt. Opening a shortcut or alias
+    will open the \c .lnk or alias file itself.
 
     Example:
 
@@ -1111,7 +1128,8 @@ bool QFileInfo::isSymLink() const
     opens the \l{symLinkTarget()}{link's target}.
 
     In contrast to isSymLink(), false will be returned for shortcuts
-    (\c *.lnk files) on Windows. Use QFileInfo::isShortcut() instead.
+    (\c *.lnk files) on Windows and aliases on \macos.
+    Use QFileInfo::isShortcut() on Windows instead.
 
     \note If the symlink points to a non existing file, exists() returns
     false.

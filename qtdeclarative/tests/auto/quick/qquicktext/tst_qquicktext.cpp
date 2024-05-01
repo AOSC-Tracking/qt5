@@ -55,6 +55,8 @@ QT_BEGIN_NAMESPACE
 extern void qt_setQtEnableTestFont(bool value);
 QT_END_NAMESPACE
 
+Q_LOGGING_CATEGORY(lcTests, "qt.quick.tests")
+
 class tst_qquicktext : public QQmlDataTest
 {
     Q_OBJECT
@@ -153,6 +155,7 @@ private slots:
     void growFromZeroWidth();
 
     void padding();
+    void paddingInLoader();
 
     void hintingPreference();
 
@@ -3475,6 +3478,46 @@ void tst_qquicktext::fontSizeMode()
 
     myText->setElideMode(QQuickText::ElideNone);
     QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+
+    // Growing height needs to update the baselineOffset when AlignBottom is used
+    // and text is NOT wrapped
+    myText->setVAlign(QQuickText::AlignBottom);
+    myText->setFontSizeMode(QQuickText::Fit);
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+
+    int baselineOffset = myText->baselineOffset();
+    myText->setHeight(myText->height() * 2);
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+    QVERIFY(myText->baselineOffset() > baselineOffset);
+
+    // Growing height needs to update the baselineOffset when AlignBottom is used
+    // and the text is wrapped
+    myText->setVAlign(QQuickText::AlignBottom);
+    myText->setFontSizeMode(QQuickText::Fit);
+    myText->setWrapMode(QQuickText::NoWrap);
+    myText->resetMaximumLineCount();
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+
+    baselineOffset = myText->baselineOffset();
+    myText->setHeight(myText->height() * 2);
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+    QVERIFY(myText->baselineOffset() > baselineOffset);
+
+    // Check baselineOffset for the HorizontalFit case
+    myText->setVAlign(QQuickText::AlignBottom);
+    myText->setFontSizeMode(QQuickText::HorizontalFit);
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+    QSignalSpy baselineOffsetSpy(myText, SIGNAL(baselineOffsetChanged(qreal)));
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+    const qreal oldBaselineOffset = myText->baselineOffset();
+    myText->setHeight(myText->height() + 42);
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+    QCOMPARE(baselineOffsetSpy.count(), 1);
+    QCOMPARE(myText->baselineOffset(), oldBaselineOffset + 42);
+    myText->setHeight(myText->height() - 42);
+    QVERIFY(QQuickTest::qWaitForItemPolished(myText));
+    QCOMPARE(baselineOffsetSpy.count(), 2);
+    QCOMPARE(myText->baselineOffset(), oldBaselineOffset);
 }
 
 void tst_qquicktext::fontSizeModeMultiline_data()
@@ -4342,6 +4385,20 @@ void tst_qquicktext::padding()
     obj->setElideMode(QQuickText::ElideRight);
     QCOMPARE(obj->implicitWidth(), cw + obj->leftPadding() + obj->rightPadding());
     QCOMPARE(obj->implicitHeight(), ch + obj->topPadding() + obj->bottomPadding());
+
+    obj->setLeftPadding(0);
+    QCOMPARE(obj->implicitWidth(), cw + obj->leftPadding() + obj->rightPadding());
+
+    obj->setWidth(cw);
+    obj->setRightPadding(cw);
+    QCOMPARE(obj->contentWidth(), 0);
+
+    for (int incr = 1; incr < 50 && qFuzzyIsNull(obj->contentWidth()); ++incr)
+        obj->setWidth(cw + incr);
+    QVERIFY(obj->contentWidth() > 0);
+    qCDebug(lcTests) << "increasing Text width from" << cw << "to" << obj->width()
+                     << "rendered a character: contentWidth now" << obj->contentWidth();
+
     obj->setElideMode(QQuickText::ElideNone);
     obj->resetWidth();
 
@@ -4384,6 +4441,34 @@ void tst_qquicktext::padding()
     QCOMPARE(obj->bottomPadding(), 0.0);
 
     delete root;
+}
+
+void tst_qquicktext::paddingInLoader() // QTBUG-83413
+{
+    QQuickView view(testFileUrl("paddingInLoader.qml"));
+    view.show();
+    view.requestActivate();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QQuickText *qtext = view.rootObject()->findChild<QQuickText*>();
+    QVERIFY(qtext);
+    QQuickTextPrivate *textPrivate = QQuickTextPrivate::get(qtext);
+    QVERIFY(textPrivate);
+    QCOMPARE(qtext->contentWidth(), 0); // does not render text, because width == rightPadding
+    QCOMPARE(textPrivate->availableWidth(), 0);
+
+    qtext->setLeftPadding(qtext->width());
+    qtext->setRightPadding(0);
+    QCOMPARE(qtext->contentWidth(), 0); // does not render text, because width == leftPadding
+    QCOMPARE(textPrivate->availableWidth(), 0);
+
+    qtext->setRightPadding(qtext->width());
+    QCOMPARE(qtext->contentWidth(), 0); // does not render text: available space is negative
+    QCOMPARE(textPrivate->availableWidth(), -qtext->width());
+
+    qtext->setLeftPadding(2);
+    qtext->setRightPadding(2);
+    QVERIFY(qtext->contentWidth() > 0); // finally space is available to render text
+    QCOMPARE(textPrivate->availableWidth(), qtext->width() - 4);
 }
 
 void tst_qquicktext::hintingPreference()

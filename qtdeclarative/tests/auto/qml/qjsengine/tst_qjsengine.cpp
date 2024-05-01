@@ -260,6 +260,7 @@ private slots:
     void sortNonStringArray();
     void iterateInvalidProxy();
     void applyOnHugeArray();
+    void reflectApplyOnHugeArray();
 
     void tostringRecursionCheck();
     void arrayIncludesWithLargeArray();
@@ -268,6 +269,9 @@ private slots:
     void dataViewCtor();
 
     void uiLanguage();
+    void forOfAndGc();
+
+    void spreadNoOverflow();
 
 public:
     Q_INVOKABLE QJSValue throwingCppMethod1();
@@ -5173,6 +5177,22 @@ void tst_QJSEngine::applyOnHugeArray()
     QCOMPARE(value.toString(), "RangeError: Array too large for apply().");
 }
 
+
+void tst_QJSEngine::reflectApplyOnHugeArray()
+{
+    QQmlEngine engine;
+    const QJSValue value = engine.evaluate(R"(
+(function(){
+const v1 = [];
+const v3 = [];
+v3.length = 3900000000;
+Reflect.apply(v1.reverse,v1,v3);
+})()
+    )");
+    QVERIFY(value.isError());
+    QCOMPARE(value.toString(), QLatin1String("RangeError: Invalid array length."));
+}
+
 void tst_QJSEngine::typedArraySet()
 {
     QJSEngine engine;
@@ -5248,6 +5268,87 @@ void tst_QJSEngine::uiLanguage()
         qmlEngine.setUiLanguage("Blah");
         QCOMPARE(qmlEngine.globalObject().property("Qt").property("uiLanguage").toString(), "Blah");
     }
+}
+
+void tst_QJSEngine::forOfAndGc()
+{
+    // We want to guard against the iterator of a for..of loop leaving the result unprotected from
+    // garbage collection. It should be possible to construct a pure JS test case, but due to the
+    // vaguaries of garbage collection it's hard to reliably trigger the crash. This test is the
+    // best I could come up with.
+
+    QQmlEngine engine;
+    QQmlComponent c(&engine);
+    c.setData(R"(
+        import QtQml 2.15
+        import QtQml.Models 2.15
+
+        QtObject {
+            id: counter
+            property int count: 0
+
+            property DelegateModel model: DelegateModel {
+                id: filesModel
+
+                model: ListModel {
+                    Component.onCompleted: {
+                        for (let idx = 0; idx < 50; idx++)
+                            append({"i" : idx})
+                    }
+                }
+
+                groups: [
+                    DelegateModelGroup {
+                        name: "selected"
+                    }
+                ]
+
+                function getSelected() {
+                    for (let i = 0; i < items.count; ++i) {
+                        var item = items.get(i)
+                        for (let el of item.groups) {
+                            if (el === "selected")
+                                ++counter.count
+                        }
+                    }
+                }
+
+                property bool bSelect: true
+                function selectAll() {
+                    for (let i = 0; i < items.count; ++i) {
+                        if (bSelect && !items.get(i).inSelected)
+                            items.addGroups(i, 1, ["selected"])
+                        else
+                            items.removeGroups(i, 1, ["selected"])
+                        getSelected()
+                    }
+                    bSelect = !bSelect
+                }
+            }
+
+            property Timer timer: Timer {
+                running: true
+                interval: 1
+                repeat: true
+                onTriggered: filesModel.selectAll()
+            }
+        }
+    )", QUrl());
+
+    QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+    QScopedPointer<QObject> o(c.create());
+
+    QTRY_VERIFY(o->property("count").toInt() > 32768);
+}
+
+void tst_QJSEngine::spreadNoOverflow()
+{
+    QJSEngine engine;
+
+    const QString program = QString::fromLatin1("var a = [] ;a.length =  555840;Math.max(...a)");
+    const QJSValue result = engine.evaluate(program);
+    QVERIFY(result.isError());
+    QCOMPARE(result.errorType(), QJSValue::RangeError);
 }
 
 QTEST_MAIN(tst_QJSEngine)

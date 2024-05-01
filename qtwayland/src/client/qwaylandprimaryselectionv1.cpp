@@ -54,11 +54,6 @@ QWaylandPrimarySelectionDeviceManagerV1::QWaylandPrimarySelectionDeviceManagerV1
     : zwp_primary_selection_device_manager_v1(display->wl_registry(), id, qMin(version, uint(1)))
     , m_display(display)
 {
-    // Create devices for all seats.
-    // This only works if we get the global before all devices
-    const auto seats = m_display->inputDevices();
-    for (auto *seat : seats)
-        seat->setPrimarySelectionDevice(createDevice(seat));
 }
 
 QWaylandPrimarySelectionDeviceV1 *QWaylandPrimarySelectionDeviceManagerV1::createDevice(QWaylandInputDevice *seat)
@@ -160,7 +155,8 @@ void QWaylandPrimarySelectionSourceV1::zwp_primary_selection_source_v1_send(cons
         action.sa_flags = 0;
 
         sigaction(SIGPIPE, &action, &oldAction);
-        write(fd, content.constData(), size_t(content.size()));
+        ssize_t unused = write(fd, content.constData(), size_t(content.size()));
+        Q_UNUSED(unused);
         sigaction(SIGPIPE, &oldAction, nullptr);
     }
     close(fd);
@@ -169,3 +165,5 @@ void QWaylandPrimarySelectionSourceV1::zwp_primary_selection_source_v1_send(cons
 } // namespace QtWaylandClient
 
 QT_END_NAMESPACE
+
+#include "moc_qwaylandprimaryselectionv1_p.cpp"

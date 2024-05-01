@@ -38,6 +38,7 @@
 #include "qwidgetplatformmenuitem_p.h"
 
 #include <QtGui/qwindow.h>
+#include <QtGui/private/qhighdpiscaling_p.h>
 #include <QtWidgets/qmenu.h>
 #include <QtWidgets/qaction.h>
 
@@ -145,7 +146,7 @@ void QWidgetPlatformMenu::showPopup(const QWindow *window, const QRect &targetRe
 
     QPoint targetPos = targetRect.bottomLeft();
     if (window)
-        targetPos = window->mapToGlobal(targetPos);
+        targetPos = window->mapToGlobal(QHighDpi::fromNativeLocalPosition(targetPos, window));
 
     const QWidgetPlatformMenuItem *widgetItem = qobject_cast<const QWidgetPlatformMenuItem *>(item);
     m_menu->popup(targetPos, widgetItem ? widgetItem->action() : nullptr);

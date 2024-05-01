@@ -69,7 +69,9 @@
 #include "qwaylandextendedsurface_p.h"
 #include "qwaylandsubsurface_p.h"
 #include "qwaylandtouch_p.h"
+#if QT_CONFIG(tabletevent)
 #include "qwaylandtabletv2_p.h"
+#endif
 #include "qwaylandqtkey_p.h"
 
 #include <QtWaylandClient/private/qwayland-text-input-unstable-v2.h>
@@ -377,11 +379,12 @@ QWaylandDisplay::~QWaylandDisplay(void)
 #if QT_CONFIG(cursor)
     qDeleteAll(mCursorThemes);
 #endif
-    if (mDisplay)
-        wl_display_disconnect(mDisplay);
 
     if (m_frameEventQueue)
         wl_event_queue_destroy(m_frameEventQueue);
+
+    if (mDisplay)
+        wl_display_disconnect(mDisplay);
 }
 
 // Steps which is called just after constructor. This separates registry_global() out of the constructor
@@ -510,11 +513,15 @@ void QWaylandDisplay::registry_global(uint32_t id, const QString &interface, uin
         mTouchExtension.reset(new QWaylandTouchExtension(this, id));
     } else if (interface == QStringLiteral("zqt_key_v1")) {
         mQtKeyExtension.reset(new QWaylandQtKeyExtension(this, id));
+#if QT_CONFIG(tabletevent)
     } else if (interface == QStringLiteral("zwp_tablet_manager_v2")) {
         mTabletManager.reset(new QWaylandTabletManagerV2(this, id, qMin(1, int(version))));
+#endif
 #if QT_CONFIG(wayland_client_primary_selection)
     } else if (interface == QStringLiteral("zwp_primary_selection_device_manager_v1")) {
         mPrimarySelectionManager.reset(new QWaylandPrimarySelectionDeviceManagerV1(this, id, 1));
+        for (QWaylandInputDevice *inputDevice : qAsConst(mInputDevices))
+            inputDevice->setPrimarySelectionDevice(mPrimarySelectionManager->createDevice(inputDevice));
 #endif
     } else if (interface == QStringLiteral("zwp_text_input_manager_v2") && !mClientSideInputContextRequested) {
         mTextInputManager.reset(new QtWayland::zwp_text_input_manager_v2(registry, id, 1));
@@ -573,6 +580,13 @@ void QWaylandDisplay::registry_global_remove(uint32_t id)
                     inputDevice->setTextInput(nullptr);
                 mWaylandIntegration->reconfigureInputContext();
             }
+#if QT_CONFIG(wayland_client_primary_selection)
+            if (global.interface == QStringLiteral("zwp_primary_selection_device_manager_v1")) {
+                mPrimarySelectionManager.reset();
+                for (QWaylandInputDevice *inputDevice : qAsConst(mInputDevices))
+                    inputDevice->setPrimarySelectionDevice(nullptr);
+            }
+#endif
             mGlobals.removeAt(i);
             break;
         }
@@ -777,3 +791,5 @@ QWaylandCursorTheme *QWaylandDisplay::loadCursorTheme(const QString &name, int p
 #include "qwaylanddisplay.moc"
 
 QT_END_NAMESPACE
+
+#include "moc_qwaylanddisplay_p.cpp"

@@ -450,12 +450,13 @@ void QQuickWindow::physicalDpiChanged()
 void QQuickWindow::handleScreenChanged(QScreen *screen)
 {
     Q_D(QQuickWindow);
+    // we connected to the initial screen in QQuickWindowPrivate::init, but the screen changed
     disconnect(d->physicalDpiChangedConnection);
     if (screen) {
         physicalDpiChanged();
         // When physical DPI changes on the same screen, either the resolution or the device pixel
         // ratio changed. We must check what it is. Device pixel ratio does not have its own
-        // ...Changed() signal.
+        // ...Changed() signal. Reconnect, same as in QQuickWindowPrivate::init.
         d->physicalDpiChangedConnection = connect(screen, &QScreen::physicalDotsPerInchChanged,
                                                   this, &QQuickWindow::physicalDpiChanged);
     }
@@ -707,8 +708,13 @@ void QQuickWindowPrivate::init(QQuickWindow *c, QQuickRenderControl *control)
 
     Q_ASSERT(windowManager || renderControl);
 
-    if (QScreen *screen = q->screen())
-       devicePixelRatio = screen->devicePixelRatio();
+    if (QScreen *screen = q->screen()) {
+        devicePixelRatio = screen->devicePixelRatio();
+        // if the screen changes, then QQuickWindow::handleScreenChanged disconnects
+        // and connects to the new screen
+        physicalDpiChangedConnection = QObject::connect(screen, &QScreen::physicalDotsPerInchChanged,
+                                                        q, &QQuickWindow::physicalDpiChanged);
+    }
 
     QSGContext *sg;
     if (renderControl) {
@@ -1488,7 +1494,11 @@ QQuickWindow::QQuickWindow(QQuickWindowPrivate &dd, QWindow *parent)
 }
 
 /*!
-    \internal
+    Constructs a window for displaying a QML scene, whose rendering will
+    be controlled by the \a control object.
+    Please refer to QQuickRenderControl's documentation for more information.
+
+    \since 5.4
 */
 QQuickWindow::QQuickWindow(QQuickRenderControl *control)
     : QWindow(*(new QQuickWindowPrivate), nullptr)
@@ -1702,6 +1712,8 @@ QQuickItem *QQuickWindow::contentItem() const
 
     \brief The item which currently has active focus or \c null if there is
     no item with active focus.
+
+    \sa QQuickItem::forceActiveFocus(), {Keyboard Focus in Qt Quick}
 */
 QQuickItem *QQuickWindow::activeFocusItem() const
 {
@@ -2140,6 +2152,15 @@ bool QQuickWindowPrivate::deliverHoverEvent(QQuickItem *item, const QPointF &sce
                 while (!hoverItems.isEmpty() && !itemsToHover.contains(hoverItems.at(0))) {
                     QQuickItem *hoverLeaveItem = hoverItems.takeFirst();
                     sendHoverEvent(QEvent::HoverLeave, hoverLeaveItem, scenePos, lastScenePos, modifiers, timestamp, accepted);
+                    QQuickItemPrivate *hoverLeaveItemPrivate = QQuickItemPrivate::get(hoverLeaveItem);
+                    if (hoverLeaveItemPrivate->hasPointerHandlers()) {
+                        for (QQuickPointerHandler *handler : hoverLeaveItemPrivate->extra->pointerHandlers) {
+                            if (auto *hh = qmlobject_cast<QQuickHoverHandler *>(handler)) {
+                                QQuickPointerEvent *pointerEvent = pointerEventInstance(QQuickPointerDevice::genericMouseDevice(), QEvent::MouseMove);
+                                pointerEvent->point(0)->cancelPassiveGrab(hh);
+                            }
+                        }
+                    }
                 }
 
                 if (!hoverItems.isEmpty() && hoverItems.at(0) == item) {//Not entering a new Item
@@ -2184,12 +2205,16 @@ bool QQuickWindowPrivate::deliverSinglePointEventUntilAccepted(QQuickPointerEven
     QVector<QQuickItem *> targetItems = pointerTargets(contentItem, point, false, false);
 
     for (QQuickItem *item : targetItems) {
+        if (!item->window())
+            continue;
         QQuickItemPrivate *itemPrivate = QQuickItemPrivate::get(item);
         event->localize(item);
         // Let Pointer Handlers have the first shot
         itemPrivate->handlePointerEvent(event);
         if (point->isAccepted())
             return true;
+        if (!item->window())
+            continue;
         QPointF g = item->window()->mapToGlobal(point->scenePosition().toPoint());
 #if QT_CONFIG(wheelevent)
         // Let the Item have a chance to handle it
@@ -2424,6 +2449,9 @@ void QQuickWindowPrivate::handleMouseEvent(QMouseEvent *event)
         Q_QUICK_INPUT_PROFILE(QQuickProfiler::Mouse, QQuickProfiler::InputMouseRelease, event->button(),
                               event->buttons());
         deliverPointerEvent(pointerEventInstance(event));
+#if QT_CONFIG(cursor)
+        updateCursor(event->windowPos());
+#endif
         break;
     case QEvent::MouseButtonDblClick:
         Q_QUICK_INPUT_PROFILE(QQuickProfiler::Mouse, QQuickProfiler::InputMouseDoubleClick,
@@ -2595,7 +2623,9 @@ QQuickPointerEvent *QQuickWindowPrivate::pointerEventInstance(QEvent *event) con
     }
 
     Q_ASSERT(dev);
-    return pointerEventInstance(dev, event->type())->reset(event);
+    auto pev = pointerEventInstance(dev, event->type());
+    Q_ASSERT(pev);
+    return pev->reset(event);
 }
 
 void QQuickWindowPrivate::deliverPointerEvent(QQuickPointerEvent *event)

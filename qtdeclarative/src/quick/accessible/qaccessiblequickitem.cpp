@@ -46,6 +46,7 @@
 #include "QtQuick/private/qquicktextinput_p.h"
 #include "QtQuick/private/qquickaccessibleattached_p.h"
 #include "QtQuick/qquicktextdocument.h"
+#include "QtQuick/qquickrendercontrol.h"
 QT_BEGIN_NAMESPACE
 
 #if QT_CONFIG(accessibility)
@@ -57,7 +58,19 @@ QAccessibleQuickItem::QAccessibleQuickItem(QQuickItem *item)
 
 QWindow *QAccessibleQuickItem::window() const
 {
-    return item()->window();
+    QQuickWindow *window = item()->window();
+
+    // For QQuickWidget the above window will be the offscreen QQuickWindow,
+    // which is not a part of the accessibility tree. Detect this case and
+    // return the window for the QQuickWidget instead.
+    if (window && !window->handle()) {
+        if (QQuickRenderControl *renderControl = QQuickWindowPrivate::get(window)->renderControl) {
+            if (QWindow *renderWindow = renderControl->renderWindow(nullptr))
+                return renderWindow;
+        }
+    }
+
+    return window;
 }
 
 int QAccessibleQuickItem::childCount() const
@@ -113,19 +126,15 @@ QAccessibleInterface *QAccessibleQuickItem::childAt(int x, int y) const
 QAccessibleInterface *QAccessibleQuickItem::parent() const
 {
     QQuickItem *parent = item()->parentItem();
-    QQuickWindow *window = item()->window();
-    QQuickItem *ci = window ? window->contentItem() : nullptr;
+    QQuickWindow *itemWindow = item()->window();
+    QQuickItem *ci = itemWindow ? itemWindow->contentItem() : nullptr;
     while (parent && !QQuickItemPrivate::get(parent)->isAccessible && parent != ci)
         parent = parent->parentItem();
 
     if (parent) {
         if (parent == ci) {
-            // Jump out to the scene widget if the parent is the root item.
-            // There are two root items, QQuickWindow::rootItem and
-            // QQuickView::declarativeRoot. The former is the true root item,
-            // but is not a part of the accessibility tree. Check if we hit
-            // it here and return an interface for the scene instead.
-            return QAccessible::queryAccessibleInterface(window);
+            // Jump out to the window if the parent is the root item
+            return QAccessible::queryAccessibleInterface(window());
         } else {
             while (parent && !parent->d_func()->isAccessible)
                 parent = parent->parentItem();
@@ -177,6 +186,11 @@ QList<QQuickItem *> QAccessibleQuickItem::childItems() const
     return accessibleUnignoredChildren(item());
 }
 
+static bool isTextRole(QAccessible::Role role)
+{
+    return role == QAccessible::EditableText || role == QAccessible::StaticText;
+}
+
 QAccessible::State QAccessibleQuickItem::state() const
 {
     QQuickAccessibleAttached *attached = QQuickAccessibleAttached::attachedProperties(item());
@@ -188,19 +202,23 @@ QAccessible::State QAccessibleQuickItem::state() const
     QRect viewRect_ = viewRect();
     QRect itemRect = rect();
 
-    if (viewRect_.isNull() || itemRect.isNull() || !item()->window() || !item()->window()->isVisible() ||!item()->isVisible() || qFuzzyIsNull(item()->opacity()))
+    if (viewRect_.isNull() || itemRect.isNull() || !window() || !window()->isVisible() ||!item()->isVisible() || qFuzzyIsNull(item()->opacity()))
         state.invisible = true;
     if (!viewRect_.intersects(itemRect))
         state.offscreen = true;
     if ((role() == QAccessible::CheckBox || role() == QAccessible::RadioButton) && object()->property("checked").toBool())
         state.checked = true;
-    if (item()->activeFocusOnTab() || role() == QAccessible::EditableText)
+    if (item()->activeFocusOnTab() || isTextRole(role()))
         state.focusable = true;
     if (item()->hasActiveFocus())
         state.focused = true;
     if (role() == QAccessible::EditableText)
         if (auto ti = qobject_cast<QQuickTextInput *>(item()))
             state.passwordEdit = ti->echoMode() != QQuickTextInput::Normal;
+    if (!item()->isEnabled()) {
+        state.focusable = false;
+        state.disabled = true;
+    }
     return state;
 }
 
@@ -212,10 +230,12 @@ QAccessible::Role QAccessibleQuickItem::role() const
 
     QAccessible::Role role = QAccessible::NoRole;
     if (item())
-        role = QQuickItemPrivate::get(item())->accessibleRole();
+        role = QQuickItemPrivate::get(item())->effectiveAccessibleRole();
     if (role == QAccessible::NoRole) {
         if (qobject_cast<QQuickText*>(const_cast<QQuickItem *>(item())))
             role = QAccessible::StaticText;
+        else if (qobject_cast<QQuickTextInput*>(const_cast<QQuickItem *>(item())))
+            role = QAccessible::EditableText;
         else
             role = QAccessible::Client;
     }
@@ -232,6 +252,7 @@ QStringList QAccessibleQuickItem::actionNames() const
 {
     QStringList actions;
     switch (role()) {
+    case QAccessible::Link:
     case QAccessible::PushButton:
         actions << QAccessibleActionInterface::pressAction();
         break;

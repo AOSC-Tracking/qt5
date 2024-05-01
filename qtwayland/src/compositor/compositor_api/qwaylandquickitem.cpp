@@ -253,6 +253,16 @@ void QWaylandBufferMaterial::ensureTextures(int count)
         m_textures << nullptr;
     }
 }
+
+void QWaylandBufferMaterial::setBufferRef(QWaylandQuickItem *surfaceItem, const QWaylandBufferRef &ref)
+{
+    Q_UNUSED(surfaceItem);
+    m_bufferRef = ref;
+    for (int plane = 0; plane < bufferTypes[ref.bufferFormatEgl()].planeCount; plane++)
+        if (auto texture = ref.toOpenGLTexture(plane))
+            setTextureForPlane(plane, texture);
+    bind();
+}
 #endif // QT_CONFIG(opengl)
 
 QMutex *QWaylandQuickItemPrivate::mutex = nullptr;
@@ -737,6 +747,7 @@ void QWaylandQuickItem::handleSubsurfaceAdded(QWaylandSurface *childSurface)
         childItem->setSurface(childSurface);
         childItem->setVisible(true);
         childItem->setParentItem(this);
+        childItem->setParent(this);
         connect(childSurface, &QWaylandSurface::subsurfacePositionChanged, childItem, &QWaylandQuickItem::handleSubsurfacePosition);
         connect(childSurface, &QWaylandSurface::destroyed, childItem, &QObject::deleteLater);
     } else {
@@ -1410,13 +1421,20 @@ QSGNode *QWaylandQuickItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeDat
 
     if (d->newTexture) {
         d->newTexture = false;
-        for (int plane = 0; plane < bufferTypes[ref.bufferFormatEgl()].planeCount; plane++)
-            if (auto texture = ref.toOpenGLTexture(plane))
-                material->setTextureForPlane(plane, texture);
-        material->bind();
+        material->setBufferRef(this, ref);
     }
 
-    QSGGeometry::updateTexturedRectGeometry(geometry, rect, QRectF(0, 0, 1, 1));
+    const QSize surfaceSize = ref.size() / surface()->bufferScale();
+    const QRectF sourceGeometry = surface()->sourceGeometry();
+    const QRectF normalizedCoordinates =
+            sourceGeometry.isValid()
+            ? QRectF(sourceGeometry.x() / surfaceSize.width(),
+                     sourceGeometry.y() / surfaceSize.height(),
+                     sourceGeometry.width() / surfaceSize.width(),
+                     sourceGeometry.height() / surfaceSize.height())
+            : QRectF(0, 0, 1, 1);
+
+    QSGGeometry::updateTexturedRectGeometry(geometry, rect, normalizedCoordinates);
 
     node->setGeometry(geometry);
     node->setFlag(QSGNode::OwnsGeometry, true);
@@ -1602,3 +1620,5 @@ void QWaylandQuickItemPrivate::placeBelowParent()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qwaylandquickitem.cpp"

@@ -290,8 +290,6 @@ void QQuickItemView::setDelegate(QQmlComponent *delegate)
     if (QQmlDelegateModel *dataModel = qobject_cast<QQmlDelegateModel*>(d->model)) {
         int oldCount = dataModel->count();
         dataModel->setDelegate(delegate);
-        if (isComponentComplete())
-            d->applyDelegateChange();
         if (oldCount != dataModel->count())
             emit countChanged();
     }
@@ -1785,7 +1783,7 @@ void QQuickItemViewPrivate::refill(qreal from, qreal to)
 
     do {
         bufferPause.stop();
-        if (currentChanges.hasPendingChanges() || bufferedChanges.hasPendingChanges()) {
+        if (currentChanges.hasPendingChanges() || bufferedChanges.hasPendingChanges() || currentChanges.active) {
             currentChanges.reset();
             bufferedChanges.reset();
             releaseVisibleItems(reusableFlag);

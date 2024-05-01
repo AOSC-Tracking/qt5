@@ -324,7 +324,7 @@ QVector3D QQuick3DNode::scenePosition() const
 }
 
 /*!
-    \qmlproperty vector3d QtQuick3D::Node::sceneRotation
+    \qmlproperty quaternion QtQuick3D::Node::sceneRotation
 
     This property returns the rotation of the node in scene space.
 */
@@ -433,7 +433,7 @@ QMatrix4x4 QQuick3DNodePrivate::sceneRotationMatrix() const
     // the rotation from the sceneMatrix directly. Instead, we need to calculate
     // it separately, which is slightly more costly.
     const QMatrix4x4 parentRotationMatrix = QQuick3DNodePrivate::get(q->parentNode())->sceneRotationMatrix();
-    return localRotationMatrix() * parentRotationMatrix;
+    return parentRotationMatrix * localRotationMatrix();
 }
 
 void QQuick3DNodePrivate::emitChangesToSceneTransform()
@@ -942,7 +942,9 @@ void QQuick3DNode::markAllDirty()
 
     This property contains the rotation values for the x, y, and z axis.
     These values are stored as a vector3d.  Rotation order is assumed to
-    be XYZ.
+    be ZXY.
+
+    \sa QQuaternion::fromEulerAngles()
 */
 
 QVector3D QQuick3DNode::eulerRotation() const

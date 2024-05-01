@@ -252,14 +252,12 @@ QWindowsContext *QWindowsContext::m_instance = nullptr;
     \internal
 */
 
-typedef QHash<HWND, QWindowsWindow *> HandleBaseWindowHash;
-
 struct QWindowsContextPrivate {
     QWindowsContextPrivate();
 
     unsigned m_systemInfo = 0;
     QSet<QString> m_registeredWindowClassNames;
-    HandleBaseWindowHash m_windows;
+    QWindowsContext::HandleBaseWindowHash m_windows;
     HDC m_displayContext = nullptr;
     int m_defaultDPI = 96;
     QWindowsKeyMapper m_keyMapper;
@@ -511,6 +509,11 @@ bool QWindowsContext::useRTLExtensions() const
 QList<int> QWindowsContext::possibleKeys(const QKeyEvent *e) const
 {
     return d->m_keyMapper.possibleKeys(e);
+}
+
+QWindowsContext::HandleBaseWindowHash &QWindowsContext::windows()
+{
+    return d->m_windows;
 }
 
 QSharedPointer<QWindowCreationContext> QWindowsContext::setWindowCreationContext(const QSharedPointer<QWindowCreationContext> &ctx)
@@ -818,6 +821,8 @@ static inline bool findPlatformWindowHelper(const POINT &screenPoint, unsigned c
     if (!(cwexFlags & CWP_SKIPTRANSPARENT)
         && (GetWindowLongPtr(child, GWL_EXSTYLE) & WS_EX_TRANSPARENT)) {
         const HWND nonTransparentChild = ChildWindowFromPointEx(*hwnd, point, cwexFlags | CWP_SKIPTRANSPARENT);
+        if (!nonTransparentChild || nonTransparentChild == *hwnd)
+            return false;
         if (QWindowsWindow *nonTransparentWindow = context->findPlatformWindow(nonTransparentChild)) {
             *result = nonTransparentWindow;
             *hwnd = nonTransparentChild;
@@ -921,7 +926,7 @@ static inline QString errorMessageFromComError(const _com_error &comError)
      TCHAR *message = nullptr;
      FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
                    nullptr, DWORD(comError.Error()), MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT),
-                   message, 0, nullptr);
+                   reinterpret_cast<LPWSTR>(&message), 0, nullptr);
      if (message) {
          const QString result = QString::fromWCharArray(message).trimmed();
          LocalFree(static_cast<HLOCAL>(message));

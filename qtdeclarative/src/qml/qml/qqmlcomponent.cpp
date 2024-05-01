@@ -1436,8 +1436,10 @@ QQmlError QQmlComponentPrivate::unsetRequiredPropertyToQQmlError(const RequiredP
     }
     error.setDescription(description);
     error.setUrl(unsetRequiredProperty.fileUrl);
-    error.setLine(qmlConvertSourceCoordinate<quint32, int>(unsetRequiredProperty.location.line));
-    error.setColumn(qmlConvertSourceCoordinate<quint32, int>(unsetRequiredProperty.location.column));
+    error.setLine(qmlConvertSourceCoordinate<quint32, int>(
+            unsetRequiredProperty.location.line()));
+    error.setColumn(qmlConvertSourceCoordinate<quint32, int>(
+            unsetRequiredProperty.location.column()));
     return  error;
 }
 
@@ -1775,3 +1777,4 @@ void QV4::QmlIncubatorObject::statusChanged(QQmlIncubator::Status s)
 QT_END_NAMESPACE
 
 #include "moc_qqmlcomponent.cpp"
+#include "moc_qqmlcomponentattached_p.cpp"

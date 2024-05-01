@@ -250,7 +250,7 @@ QT_BEGIN_NAMESPACE
     \value WindowStateChange                The \l{QWindow::windowState()}{window's state} (minimized, maximized or full-screen) has changed (QWindowStateChangeEvent).
     \value WindowTitleChange                The window title has changed.
     \value WindowUnblocked                  The window is unblocked after a modal dialog exited.
-    \value WinIdChange                      The window system identifer for this native widget has changed.
+    \value WinIdChange                      The window system identifier for this native widget has changed.
     \value ZOrderChange                     The widget's z-order has changed. This event is never sent to top level windows.
 
     User events should have values between \c User and \c{MaxUser}:
@@ -292,7 +292,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    Contructs an event object of type \a type.
+    Constructs an event object of type \a type.
 */
 QEvent::QEvent(Type type)
     : d(nullptr), t(type), posted(false), spont(false), m_accept(true)
@@ -421,6 +421,8 @@ struct QBasicAtomicBitField {
     QBasicAtomicInteger<uint> next;
     QBasicAtomicInteger<uint> data[NumInts];
 
+    constexpr QBasicAtomicBitField() = default;
+
     bool allocateSpecific(int which) noexcept
     {
         QBasicAtomicInteger<uint> &entry = data[which / BitsPerInt];
@@ -461,7 +463,7 @@ struct QBasicAtomicBitField {
 
 typedef QBasicAtomicBitField<QEvent::MaxUser - QEvent::User + 1> UserEventTypeRegistry;
 
-static UserEventTypeRegistry userEventTypeRegistry;
+static UserEventTypeRegistry userEventTypeRegistry {};
 
 static inline int registerEventTypeZeroBased(int id) noexcept
 {

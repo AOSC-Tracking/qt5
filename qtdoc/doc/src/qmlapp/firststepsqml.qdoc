@@ -104,8 +104,8 @@ If we save that document as "HelloWorld.qml", we can load and display it.
 
 To display the graphical scene defined by the QML document, it may be loaded
 with \l{Qt Creator Manual}{Qt Creator}. For simple UI files such as this one,
-select \gui{File > New File or Project > Applications > Qt Quick UI} from
-within Qt Creator.
+select \gui{File > New File or Project > Application (Qt Quick) > Qt Quick
+Application - Empty} from within Qt Creator.
 
 Pressing the green \gui{Run} button runs the application. You should see the
 text \gui{Hello, World!} in the center of a red rectangle.
@@ -138,6 +138,8 @@ import QtQuick.Controls 2.12
 
 //window containing the application
 ApplicationWindow {
+
+    visible: true
 
     //title of the application
     title: qsTr("Hello World")
@@ -213,7 +215,8 @@ Rectangle {
 }
 \endqml
 
-This example can be saved as "ClickableHelloWorld.qml" and run with qmlscene.
+This example can be saved as "ClickableHelloWorld.qml" and run with the
+\l{qtquick-qml-runtime.html}{qml} runtime tool.
 Whenever the user clicks anywhere in the window, the rectangle will change
 from red to blue.
 
@@ -265,12 +268,14 @@ Rectangle {
     Rectangle {
         width: parent.width / 2
         height: parent.height
+        color: "blue"
     }
 
     Rectangle {
         width: parent.width / 2
         height: parent.height
         x: parent.width / 2
+        color: "green"
     }
 }
 \endqml

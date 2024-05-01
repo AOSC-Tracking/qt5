@@ -1041,7 +1041,10 @@ void tst_QDateTime::toString_enumformat()
     QString str2 = dt1.toString(Qt::ISODate);
     QCOMPARE(str2, QString("1995-05-20T12:34:56"));
 
+#if QT_DEPRECATED_SINCE(5, 15)
+    QT_WARNING_PUSH QT_WARNING_DISABLE_DEPRECATED
     QString str3 = dt1.toString(Qt::LocalDate);
+    QT_WARNING_POP
     QVERIFY(!str3.isEmpty());
     //check for date/time components in any order
     //year may be 2 or 4 digits
@@ -1050,6 +1053,7 @@ void tst_QDateTime::toString_enumformat()
     QVERIFY(str3.contains("12"));
     QVERIFY(str3.contains("34"));
     //seconds may be absent
+#endif // 5.15 deprecations
 }
 
 void tst_QDateTime::addDays()
@@ -1097,6 +1101,18 @@ void tst_QDateTime::addDays()
     QCOMPARE(dt2.time(), QTime(0, 0, 0));
     QCOMPARE(dt2.timeSpec(), Qt::OffsetFromUTC);
     QCOMPARE(dt2.offsetFromUtc(), 60 * 60);
+
+#if QT_CONFIG(timezone)
+    const QTimeZone cet("Europe/Oslo");
+    if (cet.isValid()) {
+        dt1 = QDate(2022, 1, 10).startOfDay(cet);
+        dt2 = dt1.addDays(2); // QTBUG-99668: should not assert
+        QCOMPARE(dt2.date(), QDate(2022, 1, 12));
+        QCOMPARE(dt2.time(), QTime(0, 0));
+        QCOMPARE(dt2.timeSpec(), Qt::TimeZone);
+        QCOMPARE(dt2.timeZone(), cet);
+    }
+#endif
 
     // ### test invalid QDateTime()
 }

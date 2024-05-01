@@ -73,8 +73,7 @@ static const int kControlUnicode = 0x2303;
 static const int kOptionUnicode = 0x2325;
 static const int kCommandUnicode = 0x2318;
 
-static const int NumEntries = 21;
-static const MacSpecialKey entries[NumEntries] = {
+static const MacSpecialKey entries[] = {
     { Qt::Key_Escape, 0x238B },
     { Qt::Key_Tab, 0x21E5 },
     { Qt::Key_Backtab, 0x21E4 },
@@ -96,6 +95,7 @@ static const MacSpecialKey entries[NumEntries] = {
     { Qt::Key_Alt, kOptionUnicode },
     { Qt::Key_CapsLock, 0x21EA },
 };
+static const int NumEntries = sizeof entries / sizeof *entries;
 
 static bool operator<(const MacSpecialKey &entry, int key)
 {
@@ -701,6 +701,10 @@ static const struct {
     { Qt::Key_TouchpadToggle,  QT_TRANSLATE_NOOP("QShortcut", "Touchpad Toggle") },
     { Qt::Key_TouchpadOn,  QT_TRANSLATE_NOOP("QShortcut", "Touchpad On") },
     { Qt::Key_TouchpadOff,  QT_TRANSLATE_NOOP("QShortcut", "Touchpad Off") },
+    { Qt::Key_Shift,  QT_TRANSLATE_NOOP("QShortcut", "Shift") },
+    { Qt::Key_Control,  QT_TRANSLATE_NOOP("QShortcut", "Control") },
+    { Qt::Key_Alt,  QT_TRANSLATE_NOOP("QShortcut", "Alt") },
+    { Qt::Key_Meta,  QT_TRANSLATE_NOOP("QShortcut", "Meta") },
 
 };
 static Q_CONSTEXPR int numKeyNames = sizeof keyname / sizeof *keyname;
@@ -1693,3 +1697,5 @@ QDebug operator<<(QDebug dbg, const QKeySequence &p)
 */
 
 QT_END_NAMESPACE
+
+#include "moc_qkeysequence.cpp"

@@ -203,26 +203,20 @@ bool QQmlTypeData::tryLoadFromDiskCache()
             Q_ASSERT(errors.size());
             QQmlError error(errors.takeFirst());
             error.setUrl(m_importCache.baseUrl());
-            error.setLine(qmlConvertSourceCoordinate<quint32, int>(import->location.line));
-            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(import->location.column));
+            error.setLine(qmlConvertSourceCoordinate<quint32, int>(import->location.line()));
+            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(import->location.column()));
             errors.prepend(error); // put it back on the list after filling out information.
             setError(errors);
             return false;
         }
     }
 
-    QQmlType containingType;
-    auto containingTypeName = finalUrl().fileName().split(QLatin1Char('.')).first();
-    int major = -1, minor = -1;
-    QQmlImportNamespace *ns = nullptr;
-    m_importCache.resolveType(containingTypeName, &containingType, &major, &minor, &ns);
     for (auto&& ic: ics) {
         QString const nameString = m_compiledData->stringAt(ic.nameIndex);
-        QByteArray const name = nameString.toUtf8();
         auto importUrl = finalUrl();
         importUrl.setFragment(QString::number(ic.objectIndex));
         auto import = new QQmlImportInstance();
-        m_importCache.addInlineComponentImport(import, nameString, importUrl, containingType);
+        m_importCache.addInlineComponentImport(import, nameString, importUrl, QQmlType());
     }
 
     return true;
@@ -330,8 +324,8 @@ void QQmlTypeData::done()
             QList<QQmlError> errors = script.script->errors();
             QQmlError error;
             error.setUrl(url());
-            error.setLine(qmlConvertSourceCoordinate<quint32, int>(script.location.line));
-            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(script.location.column));
+            error.setLine(qmlConvertSourceCoordinate<quint32, int>(script.location.line()));
+            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(script.location.column()));
             error.setDescription(QQmlTypeLoader::tr("Script %1 unavailable").arg(script.script->urlString()));
             errors.prepend(error);
             setError(errors);
@@ -354,8 +348,8 @@ void QQmlTypeData::done()
                 QList<QQmlError> errors = type.typeData ? type.typeData->errors() : QList<QQmlError>{};
                 QQmlError error;
                 error.setUrl(url());
-                error.setLine(qmlConvertSourceCoordinate<quint32, int>(type.location.line));
-                error.setColumn(qmlConvertSourceCoordinate<quint32, int>(type.location.column));
+                error.setLine(qmlConvertSourceCoordinate<quint32, int>(type.location.line()));
+                error.setColumn(qmlConvertSourceCoordinate<quint32, int>(type.location.column()));
                 error.setDescription(QQmlTypeLoader::tr("Type %1 has no inline component type called %2").arg(typeName.leftRef(lastDot), type.type.pendingResolutionName()));
                 errors.prepend(error);
                 setError(errors);
@@ -370,8 +364,8 @@ void QQmlTypeData::done()
             QList<QQmlError> errors = type.typeData->errors();
             QQmlError error;
             error.setUrl(url());
-            error.setLine(qmlConvertSourceCoordinate<quint32, int>(type.location.line));
-            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(type.location.column));
+            error.setLine(qmlConvertSourceCoordinate<quint32, int>(type.location.line()));
+            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(type.location.column()));
             error.setDescription(QQmlTypeLoader::tr("Type %1 unavailable").arg(typeName));
             errors.prepend(error);
             setError(errors);
@@ -389,8 +383,8 @@ void QQmlTypeData::done()
             QList<QQmlError> errors = type.typeData->errors();
             QQmlError error;
             error.setUrl(url());
-            error.setLine(qmlConvertSourceCoordinate<quint32, int>(type.location.line));
-            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(type.location.column));
+            error.setLine(qmlConvertSourceCoordinate<quint32, int>(type.location.line()));
+            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(type.location.column()));
             error.setDescription(QQmlTypeLoader::tr("Type %1 unavailable").arg(typeName));
             errors.prepend(error);
             setError(errors);
@@ -702,8 +696,8 @@ void QQmlTypeData::continueLoadFromIR()
             Q_ASSERT(errors.size());
             QQmlError error(errors.takeFirst());
             error.setUrl(m_importCache.baseUrl());
-            error.setLine(qmlConvertSourceCoordinate<quint32, int>(import->location.line));
-            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(import->location.column));
+            error.setLine(qmlConvertSourceCoordinate<quint32, int>(import->location.line()));
+            error.setColumn(qmlConvertSourceCoordinate<quint32, int>(import->location.column()));
             errors.prepend(error); // put it back on the list after filling out information.
             setError(errors);
             return;
@@ -729,8 +723,10 @@ void QQmlTypeData::allDependenciesDone()
                     QQmlError error;
                     error.setDescription(QQmlTypeLoader::tr("module \"%1\" is not installed").arg(import->uri));
                     error.setUrl(m_importCache.baseUrl());
-                    error.setLine(qmlConvertSourceCoordinate<quint32, int>(import->location.line));
-                    error.setColumn(qmlConvertSourceCoordinate<quint32, int>(import->location.column));
+                    error.setLine(qmlConvertSourceCoordinate<quint32, int>(
+                            import->location.line()));
+                    error.setColumn(qmlConvertSourceCoordinate<quint32, int>(
+                            import->location.column()));
                     errors.prepend(error);
                 }
             }
@@ -864,8 +860,8 @@ void QQmlTypeData::resolveTypes()
 
         bool *selfReferenceDetection = unresolvedRef->needsCreation ? nullptr : &ref.selfReference;
 
-        if (!resolveType(name, majorVersion, minorVersion, ref, unresolvedRef->location.line,
-                         unresolvedRef->location.column, reportErrors,
+        if (!resolveType(name, majorVersion, minorVersion, ref, unresolvedRef->location.line(),
+                         unresolvedRef->location.column(), reportErrors,
                          QQmlType::AnyRegistrationType, selfReferenceDetection) && reportErrors)
             return;
 
@@ -887,8 +883,7 @@ void QQmlTypeData::resolveTypes()
         ref.majorVersion = majorVersion;
         ref.minorVersion = minorVersion;
 
-        ref.location.line = unresolvedRef->location.line;
-        ref.location.column = unresolvedRef->location.column;
+        ref.location = unresolvedRef->location;
 
         ref.needsCreation = unresolvedRef->needsCreation;
         m_resolvedTypes.insert(unresolvedRef.key(), ref);

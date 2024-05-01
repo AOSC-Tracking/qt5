@@ -48,7 +48,9 @@ private slots:
     void valueWithoutCallingObjectFirst();
     void filterOnGroup_removeWhenCompleted();
     void qtbug_86017();
+    void contextAccessedByHandler();
     void redrawUponColumnChange();
+    void deleteRace();
 };
 
 class AbstractItemModel : public QAbstractItemModel
@@ -167,6 +169,27 @@ void tst_QQmlDelegateModel::qtbug_86017()
     QCOMPARE(model->filterGroup(), "selected");
 }
 
+void tst_QQmlDelegateModel::filterOnGroup_removeWhenCompleted()
+{
+    QQuickView view(testFileUrl("removeFromGroup.qml"));
+    QCOMPARE(view.status(), QQuickView::Ready);
+    view.show();
+    QQuickItem *root = view.rootObject();
+    QVERIFY(root);
+    QQmlDelegateModel *model = root->findChild<QQmlDelegateModel*>();
+    QVERIFY(model);
+    QVERIFY(QTest::qWaitFor([=]{ return model->count() == 2; }));
+}
+
+void tst_QQmlDelegateModel::contextAccessedByHandler()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, testFileUrl("contextAccessedByHandler.qml"));
+    QScopedPointer<QObject> root(component.create());
+    QVERIFY2(root, qPrintable(component.errorString()));
+    QVERIFY(root->property("works").toBool());
+}
+
 void tst_QQmlDelegateModel::redrawUponColumnChange()
 {
     QStandardItemModel m1;
@@ -189,6 +212,17 @@ void tst_QQmlDelegateModel::redrawUponColumnChange()
     m1.removeColumn(0);
 
     QCOMPARE(item->property("text").toString(), "Coconut");
+}
+
+void tst_QQmlDelegateModel::deleteRace()
+{
+    QQmlEngine engine;
+    QQmlComponent c(&engine, testFileUrl("deleteRace.qml"));
+    QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+    QScopedPointer<QObject> o(c.create());
+    QVERIFY(!o.isNull());
+    QTRY_COMPARE(o->property("count").toInt(), 2);
+    QTRY_COMPARE(o->property("count").toInt(), 0);
 }
 
 QTEST_MAIN(tst_QQmlDelegateModel)

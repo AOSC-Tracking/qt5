@@ -44,6 +44,7 @@
 #include <QtWaylandClient/private/qwaylandwindow_p.h>
 #include <QtWaylandClient/private/qwaylandinputdevice_p.h>
 #include <QtWaylandClient/private/qwaylandscreen_p.h>
+#include <QtWaylandClient/private/qwaylandcursor_p.h>
 #include <QtWaylandClient/private/qwaylandabstractdecoration_p.h>
 
 #include <QtGui/private/qwindow_p.h>
@@ -195,12 +196,17 @@ QtWayland::xdg_toplevel::resize_edge QWaylandXdgSurface::Toplevel::convertToResi
                 | ((edges & Qt::RightEdge) ? resize_edge_right : 0));
 }
 
-QWaylandXdgSurface::Popup::Popup(QWaylandXdgSurface *xdgSurface, QWaylandXdgSurface *parent,
+QWaylandXdgSurface::Popup::Popup(QWaylandXdgSurface *xdgSurface, QWaylandWindow *parent,
                                  QtWayland::xdg_positioner *positioner)
-    : xdg_popup(xdgSurface->get_popup(parent->object(), positioner->object()))
-    , m_xdgSurface(xdgSurface)
+    : m_xdgSurface(xdgSurface)
+    , m_parentXdgSurface(qobject_cast<QWaylandXdgSurface *>(parent->shellSurface()))
     , m_parent(parent)
 {
+
+    init(xdgSurface->get_popup(m_parentXdgSurface ? m_parentXdgSurface->object() : nullptr, positioner->object()));
+    if (m_parent) {
+        m_parent->addChildPopup(m_xdgSurface->window());
+    }
 }
 
 QWaylandXdgSurface::Popup::~Popup()
@@ -208,10 +214,26 @@ QWaylandXdgSurface::Popup::~Popup()
     if (isInitialized())
         destroy();
 
+    if (m_parent) {
+        m_parent->removeChildPopup(m_xdgSurface->window());
+    }
+
     if (m_grabbing) {
         auto *shell = m_xdgSurface->m_shell;
         Q_ASSERT(shell->m_topmostGrabbingPopup == this);
-        shell->m_topmostGrabbingPopup = m_parent->m_popup;
+        shell->m_topmostGrabbingPopup = m_parentXdgSurface ? m_parentXdgSurface->m_popup : nullptr;
+        m_grabbing = false;
+
+        // Synthesize Qt enter/leave events for popup
+        QWindow *leave = nullptr;
+        if (m_xdgSurface && m_xdgSurface->window())
+            leave = m_xdgSurface->window()->window();
+        QWindowSystemInterface::handleLeaveEvent(leave);
+
+        if (QWindow *enter = QGuiApplication::topLevelAt(QCursor::pos())) {
+            const auto pos = m_xdgSurface->window()->display()->waylandCursor()->pos();
+            QWindowSystemInterface::handleEnterEvent(enter, enter->handle()->mapFromGlobal(pos), pos);
+        }
     }
 }
 
@@ -328,15 +350,16 @@ bool QWaylandXdgSurface::handleExpose(const QRegion &region)
 
 void QWaylandXdgSurface::applyConfigure()
 {
-    Q_ASSERT(m_pendingConfigureSerial != 0);
+    // It is a redundant ack_configure, so skipped.
+    if (m_pendingConfigureSerial == m_appliedConfigureSerial)
+        return;
 
     if (m_toplevel)
         m_toplevel->applyConfigure();
+    m_appliedConfigureSerial = m_pendingConfigureSerial;
 
     m_configured = true;
-    ack_configure(m_pendingConfigureSerial);
-
-    m_pendingConfigureSerial = 0;
+    ack_configure(m_appliedConfigureSerial);
 }
 
 bool QWaylandXdgSurface::wantsDecorations() const
@@ -347,9 +370,6 @@ bool QWaylandXdgSurface::wantsDecorations() const
 void QWaylandXdgSurface::propagateSizeHints()
 {
     setSizeHints();
-
-    if (m_toplevel && m_window)
-        m_window->commit();
 }
 
 void QWaylandXdgSurface::setWindowGeometry(const QRect &rect)
@@ -364,10 +384,10 @@ void QWaylandXdgSurface::setSizeHints()
         const int minHeight = qMax(0, m_window->windowMinimumSize().height());
         m_toplevel->set_min_size(minWidth, minHeight);
 
-        int maxWidth = qMax(0, m_window->windowMaximumSize().width());
+        int maxWidth = qMax(minWidth, m_window->windowMaximumSize().width());
         if (maxWidth == QWINDOWSIZE_MAX)
             maxWidth = 0;
-        int maxHeight = qMax(0, m_window->windowMaximumSize().height());
+        int maxHeight = qMax(minHeight, m_window->windowMaximumSize().height());
         if (maxHeight == QWINDOWSIZE_MAX)
             maxHeight = 0;
         m_toplevel->set_max_size(maxWidth, maxHeight);
@@ -392,8 +412,6 @@ void QWaylandXdgSurface::setPopup(QWaylandWindow *parent)
 {
     Q_ASSERT(!m_toplevel && !m_popup);
 
-    auto parentXdgSurface = static_cast<QWaylandXdgSurface *>(parent->shellSurface());
-
     auto positioner = new QtWayland::xdg_positioner(m_shell->create_positioner());
     // set_popup expects a position relative to the parent
     QPoint transientPos = m_window->geometry().topLeft(); // this is absolute
@@ -406,8 +424,11 @@ void QWaylandXdgSurface::setPopup(QWaylandWindow *parent)
     positioner->set_anchor(QtWayland::xdg_positioner::anchor_top_left);
     positioner->set_gravity(QtWayland::xdg_positioner::gravity_bottom_right);
     positioner->set_size(m_window->geometry().width(), m_window->geometry().height());
-    m_popup = new Popup(this, parentXdgSurface, positioner);
+    positioner->set_constraint_adjustment(QtWayland::xdg_positioner::constraint_adjustment_slide_x
+        | QtWayland::xdg_positioner::constraint_adjustment_slide_y);
+    m_popup = new Popup(this, parent, positioner);
     positioner->destroy();
+
     delete positioner;
 }
 
@@ -429,6 +450,25 @@ void QWaylandXdgSurface::setGrabPopup(QWaylandWindow *parent, QWaylandInputDevic
     }
     setPopup(parent);
     m_popup->grab(device, serial);
+
+    // Synthesize Qt enter/leave events for popup
+    if (!parent)
+        return;
+    QWindow *current = QGuiApplication::topLevelAt(QCursor::pos());
+    QWindow *leave = parent->window();
+    if (current != leave)
+        return;
+
+    QWindowSystemInterface::handleLeaveEvent(leave);
+
+    QWindow *enter = nullptr;
+    if (m_popup && m_popup->m_xdgSurface && m_popup->m_xdgSurface->window())
+        enter = m_popup->m_xdgSurface->window()->window();
+
+    if (enter) {
+        const auto pos = m_popup->m_xdgSurface->window()->display()->waylandCursor()->pos();
+        QWindowSystemInterface::handleEnterEvent(enter, enter->handle()->mapFromGlobal(pos), pos);
+    }
 }
 
 void QWaylandXdgSurface::xdg_surface_configure(uint32_t serial)
@@ -484,3 +524,5 @@ void QWaylandXdgShell::handleRegistryGlobal(void *data, wl_registry *registry, u
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qwaylandxdgshell_p.cpp"

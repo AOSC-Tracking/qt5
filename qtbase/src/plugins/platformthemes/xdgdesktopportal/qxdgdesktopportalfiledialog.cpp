@@ -238,6 +238,9 @@ void QXdgDesktopPortalFileDialog::openPortal(Qt::WindowFlags windowFlags, Qt::Wi
             filter.name = mimeType.comment();
             filter.filterConditions = filterConditions;
 
+            if (filter.name.isEmpty())
+                filter.name = mimeTypefilter;
+
             filterList << filter;
 
             if (!d->selectedMimeTypeFilter.isEmpty() && d->selectedMimeTypeFilter == mimeTypefilter)
@@ -491,3 +494,5 @@ bool QXdgDesktopPortalFileDialog::useNativeFileDialog(QXdgDesktopPortalFileDialo
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qxdgdesktopportalfiledialog_p.cpp"

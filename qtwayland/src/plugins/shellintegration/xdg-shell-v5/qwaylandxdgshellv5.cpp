@@ -84,7 +84,7 @@ QWaylandXdgPopupV5 *QWaylandXdgShellV5::createXdgPopup(QWaylandWindow *window, Q
     int x = position.x() + parentWindow->frameMargins().left();
     int y = position.y() + parentWindow->frameMargins().top();
 
-    auto popup = new QWaylandXdgPopupV5(get_xdg_popup(window->wlSurface(), parentSurface, seat, m_popupSerial, x, y), window);
+    auto popup = new QWaylandXdgPopupV5(get_xdg_popup(window->wlSurface(), parentSurface, seat, m_popupSerial, x, y), parentWindow, window);
     m_popups.append(window);
     QObject::connect(popup, &QWaylandXdgPopupV5::destroyed, [this, window](){
         m_popups.removeOne(window);

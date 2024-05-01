@@ -46,10 +46,12 @@
 #include <private/qnoncontiguousbytedevice_p.h>
 
 #include <QtNetwork/qabstractsocket.h>
+
 #include <QtCore/qloggingcategory.h>
 #include <QtCore/qendian.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qlist.h>
+#include <QtCore/private/qnumeric_p.h>
 #include <QtCore/qurl.h>
 
 #include <qhttp2configuration.h>
@@ -124,8 +126,10 @@ std::vector<uchar> assemble_hpack_block(const std::vector<Http2::Frame> &frames)
     std::vector<uchar> hpackBlock;
 
     quint32 total = 0;
-    for (const auto &frame : frames)
-        total += frame.hpackBlockSize();
+    for (const auto &frame : frames) {
+        if (add_overflow(total, frame.hpackBlockSize(), &total))
+            return hpackBlock;
+    }
 
     if (!total)
         return hpackBlock;
@@ -393,8 +397,8 @@ bool QHttp2ProtocolHandler::sendRequest()
         initReplyFromPushPromise(message, key);
     }
 
-    const auto streamsToUse = std::min<quint32>(maxConcurrentStreams > activeStreams.size()
-                                                ? maxConcurrentStreams - activeStreams.size() : 0,
+    const auto streamsToUse = std::min<quint32>(maxConcurrentStreams > quint32(activeStreams.size())
+                                                ? maxConcurrentStreams - quint32(activeStreams.size()) : 0,
                                                 requests.size());
     auto it = requests.begin();
     for (quint32 i = 0; i < streamsToUse; ++i) {
@@ -1135,8 +1139,6 @@ void QHttp2ProtocolHandler::updateStream(Stream &stream, const HPack::HttpHeader
     // moment and we are probably not done yet. So we extract url and set it
     // here, if needed.
     int statusCode = 0;
-    QUrl redirectUrl;
-
     for (const auto &pair : headers) {
         const auto &name = pair.name;
         auto value = pair.value;
@@ -1159,8 +1161,6 @@ void QHttp2ProtocolHandler::updateStream(Stream &stream, const HPack::HttpHeader
             if (ok)
                 httpReply->setContentLength(length);
         } else {
-            if (name == "location")
-                redirectUrl = QUrl::fromEncoded(value);
             QByteArray binder(", ");
             if (name == "set-cookie")
                 binder = "\n";
@@ -1225,8 +1225,20 @@ void QHttp2ProtocolHandler::updateStream(Stream &stream, const HPack::HttpHeader
         }
     }
 
-    if (QHttpNetworkReply::isHttpRedirect(statusCode) && redirectUrl.isValid())
-        httpReply->setRedirectUrl(redirectUrl);
+    if (QHttpNetworkReply::isHttpRedirect(statusCode) && httpRequest.isFollowRedirects()) {
+        QHttpNetworkConnectionPrivate::ParseRedirectResult result =
+                m_connection->d_func()->parseRedirectResponse(httpReply);
+        if (result.errorCode != QNetworkReply::NoError) {
+            auto errorString = m_connection->d_func()->errorDetail(result.errorCode, m_socket);
+            finishStreamWithError(stream, result.errorCode, errorString);
+            sendRST_STREAM(stream.streamID, INTERNAL_ERROR);
+            markAsReset(stream.streamID);
+            return;
+        }
+
+        if (result.redirectUrl.isValid())
+            httpReply->setRedirectUrl(result.redirectUrl);
+    }
 
     if (httpReplyPrivate->isCompressed() && httpRequest.d->autoDecompress)
         httpReplyPrivate->removeAutoDecompressHeader();

@@ -391,7 +391,7 @@ QGeometry *MeshLoaderFunctor::operator()()
 /*!
  * \internal
  */
-bool MeshLoaderFunctor::operator ==(const QGeometryFactory &other) const
+bool MeshLoaderFunctor::equals(const QGeometryFactory &other) const
 {
     const MeshLoaderFunctor *otherFunctor = functor_cast<MeshLoaderFunctor>(&other);
     if (otherFunctor != nullptr)
@@ -445,3 +445,5 @@ void MeshDownloadRequest::onCompleted()
 } // namespace Qt3DRender
 
 QT_END_NAMESPACE
+
+#include "moc_qmesh.cpp"

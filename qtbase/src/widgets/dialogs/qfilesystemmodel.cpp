@@ -726,6 +726,9 @@ QVariant QFileSystemModel::data(const QModelIndex &index, int role) const
 
     switch (role) {
     case Qt::EditRole:
+        if (index.column() == 0)
+            return d->name(index);
+        Q_FALLTHROUGH();
     case Qt::DisplayRole:
         switch (index.column()) {
         case 0: return d->displayName(index);
@@ -2059,6 +2062,10 @@ QStringList QFileSystemModelPrivate::unwatchPathsAt(const QModelIndex &index)
     return result;
 }
 #endif // filesystemwatcher && Q_OS_WIN
+
+QFileSystemModelPrivate::QFileSystemModelPrivate() = default;
+
+QFileSystemModelPrivate::~QFileSystemModelPrivate() = default;
 
 /*!
     \internal

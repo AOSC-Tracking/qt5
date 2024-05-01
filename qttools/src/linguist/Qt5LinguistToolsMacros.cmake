@@ -1,4 +1,5 @@
 #=============================================================================
+# Copyright (C) 2022 The Qt Company Ltd.
 # Copyright 2005-2011 Kitware, Inc.
 # All rights reserved.
 #
@@ -47,7 +48,7 @@ function(QT5_CREATE_TRANSLATION _qm_files)
         list(GET _lupdate_options ${_extensions_index} _extensions_list)
         string(REPLACE "," ";" _extensions_list "${_extensions_list}")
         list(TRANSFORM _extensions_list STRIP)
-        list(TRANSFORM _extensions_list REPLACE "^\." "")
+        list(TRANSFORM _extensions_list REPLACE "^\\." "")
         list(TRANSFORM _extensions_list PREPEND "*.")
     else()
         set(_extensions_list "*.java;*.jui;*.ui;*.c;*.c++;*.cc;*.cpp;*.cxx;*.ch;*.h;*.h++;*.hh;*.hpp;*.hxx;*.js;*.qs;*.qml;*.qrc")
@@ -63,11 +64,16 @@ function(QT5_CREATE_TRANSLATION _qm_files)
             list(APPEND _my_sources ${_abs_FILE})
         endif()
     endforeach()
+    set(stamp_file_dir "${CMAKE_CURRENT_BINARY_DIR}/.lupdate")
+    if(NOT EXISTS "${stamp_file_dir}")
+        file(MAKE_DIRECTORY "${stamp_file_dir}")
+    endif()
+    set(stamp_files "")
     foreach(_ts_file ${_my_tsfiles})
+        get_filename_component(_ts_name ${_ts_file} NAME)
         if(_my_sources)
           # make a list file to call lupdate on, so we don't make our commands too
           # long for some systems
-          get_filename_component(_ts_name ${_ts_file} NAME)
           set(_ts_lst_file "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_ts_name}_lst_file")
           set(_lst_file_srcs)
           set(_dependencies)
@@ -90,13 +96,22 @@ function(QT5_CREATE_TRANSLATION _qm_files)
 
           file(WRITE ${_ts_lst_file} "${_lst_file_srcs}")
         endif()
-        add_custom_command(OUTPUT ${_ts_file}
+        file(RELATIVE_PATH _ts_relative_path ${CMAKE_CURRENT_SOURCE_DIR} ${_ts_file})
+        string(REPLACE "../" "__/" _ts_relative_path "${_ts_relative_path}")
+        set(stamp_file "${stamp_file_dir}/${_ts_relative_path}.stamp")
+        list(APPEND stamp_files ${stamp_file})
+        get_filename_component(full_stamp_file_dir "${stamp_file}" DIRECTORY)
+        if(NOT EXISTS "${full_stamp_file_dir}")
+            file(MAKE_DIRECTORY "${full_stamp_file_dir}")
+        endif()
+        add_custom_command(OUTPUT ${stamp_file}
             COMMAND ${Qt5_LUPDATE_EXECUTABLE}
             ARGS ${_lupdate_options} "@${_ts_lst_file}" -ts ${_ts_file}
+            COMMAND ${CMAKE_COMMAND} -E touch "${stamp_file}"
             DEPENDS ${_dependencies}
             VERBATIM)
     endforeach()
-    qt5_add_translation(${_qm_files} ${_my_tsfiles})
+    qt5_add_translation(${_qm_files} ${_my_tsfiles} __QT_INTERNAL_TIMESTAMP_FILES ${stamp_files})
     set(${_qm_files} ${${_qm_files}} PARENT_SCOPE)
 endfunction()
 
@@ -115,11 +130,12 @@ endif()
 function(QT5_ADD_TRANSLATION _qm_files)
     set(options)
     set(oneValueArgs)
-    set(multiValueArgs OPTIONS)
+    set(multiValueArgs OPTIONS __QT_INTERNAL_TIMESTAMP_FILES)
 
     cmake_parse_arguments(_LRELEASE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
     set(_lrelease_files ${_LRELEASE_UNPARSED_ARGUMENTS})
 
+    set(idx 0)
     foreach(_current_FILE ${_lrelease_files})
         get_filename_component(_abs_FILE ${_current_FILE} ABSOLUTE)
         get_filename_component(qm ${_abs_FILE} NAME)
@@ -133,10 +149,18 @@ function(QT5_ADD_TRANSLATION _qm_files)
             set(qm "${CMAKE_CURRENT_BINARY_DIR}/${FILE_NAME}.qm")
         endif()
 
+        if(_LRELEASE___QT_INTERNAL_TIMESTAMP_FILES)
+            list(GET _LRELEASE___QT_INTERNAL_TIMESTAMP_FILES ${idx} ts_stamp_file)
+            math(EXPR idx "${idx} + 1")
+            set(qm_dep "${ts_stamp_file}")
+        else()
+            set(qm_dep "${_abs_FILE}")
+        endif()
+
         add_custom_command(OUTPUT ${qm}
             COMMAND ${Qt5_LRELEASE_EXECUTABLE}
             ARGS ${_LRELEASE_OPTIONS} ${_abs_FILE} -qm ${qm}
-            DEPENDS ${_abs_FILE} VERBATIM
+            DEPENDS ${qm_dep} VERBATIM
         )
         list(APPEND ${_qm_files} ${qm})
     endforeach()

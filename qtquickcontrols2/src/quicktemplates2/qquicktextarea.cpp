@@ -512,7 +512,7 @@ void QQuickTextAreaPrivate::accessibilityActiveChanged(bool active)
     Q_Q(QQuickTextArea);
     QQuickAccessibleAttached *accessibleAttached = qobject_cast<QQuickAccessibleAttached *>(qmlAttachedPropertiesObject<QQuickAccessibleAttached>(q, true));
     Q_ASSERT(accessibleAttached);
-    accessibleAttached->setRole(accessibleRole());
+    accessibleAttached->setRole(effectiveAccessibleRole());
     accessibleAttached->set_readOnly(q->isReadOnly());
     accessibleAttached->setDescription(placeholder);
 }
@@ -1086,7 +1086,11 @@ QSGNode *QQuickTextArea::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
     if (d->flickable)
         clipper = d->flickable;
 
-    const QRectF cr = clipper->clipRect().adjusted(leftPadding(), topPadding(), -rightPadding(), -bottomPadding());
+    const QRectF cr = clipper->clipRect().adjusted(
+            leftPadding(), topPadding(),
+            (!d->cursorItem && effectiveHAlign() == HAlignment::AlignRight ? 1 : 0) - rightPadding(),
+            -bottomPadding());
+
     clipNode->setRect(!d->flickable ? cr : cr.translated(d->flickable->contentX(), d->flickable->contentY()));
     clipNode->update();
 

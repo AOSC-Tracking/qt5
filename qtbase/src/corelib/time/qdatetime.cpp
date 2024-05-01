@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2020 The Qt Company Ltd.
+** Copyright (C) 2022 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -43,7 +43,6 @@
 #if QT_CONFIG(datetimeparser)
 #include "private/qdatetimeparser_p.h"
 #endif
-#include <private/qnumeric_p.h>
 
 #include "qdatastream.h"
 #include "qset.h"
@@ -76,6 +75,7 @@
 
 #include "qcalendar.h"
 #include "qgregoriancalendar_p.h"
+#include "private/qnumeric_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -4551,9 +4551,9 @@ static inline void massageAdjustedDateTime(const QDateTimeData &d, QDate *date, 
         QDateTimePrivate::DaylightStatus status = QDateTimePrivate::UnknownDaylightTime;
         localMSecsToEpochMSecs(timeToMSecs(*date, *time), &status, date, time);
 #if QT_CONFIG(timezone)
-    } else if (spec == Qt::TimeZone && d->m_timeZone.isValid()) {
+    } else if (spec == Qt::TimeZone && d.d->m_timeZone.isValid()) {
         QDateTimePrivate::zoneMSecsToEpochMSecs(timeToMSecs(*date, *time),
-                                                d->m_timeZone,
+                                                d.d->m_timeZone,
                                                 QDateTimePrivate::UnknownDaylightTime,
                                                 date, time);
 #endif // timezone
@@ -4654,7 +4654,7 @@ QDateTime QDateTime::addSecs(qint64 s) const
 }
 
 /*!
-    Returns a QDateTime object containing a datetime \a msecs miliseconds
+    Returns a QDateTime object containing a datetime \a msecs milliseconds
     later than the datetime of this object (or earlier if \a msecs is
     negative).
 

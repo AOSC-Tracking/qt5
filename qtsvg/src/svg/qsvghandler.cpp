@@ -2364,8 +2364,9 @@ static bool parseAnimateNode(QSvgNode *parent,
     return true;
 }
 
-static int parseClockValue(QString str, bool *ok)
+static int parseClockValue(const QString &instr, bool *ok)
 {
+    QStringRef str(&instr);
     int res = 0;
     int ms = 1000;
     str = str.trimmed();
@@ -2513,6 +2514,8 @@ static bool parseAnimateTransformNode(QSvgNode *parent,
             ++s;
         }
     }
+    if (vals.count() % 3 != 0)
+        return false;
 
     bool ok = true;
     int begin = parseClockValue(beginStr, &ok);
@@ -2668,7 +2671,7 @@ static bool parseFontFaceNode(QSvgStyleProperty *parent,
 
     qreal unitsPerEm = toDouble(unitsPerEmStr);
     if (!unitsPerEm)
-        unitsPerEm = 1000;
+        unitsPerEm = QSvgFont::DEFAULT_UNITS_PER_EM;
 
     if (!name.isEmpty())
         font->setFamilyName(name);

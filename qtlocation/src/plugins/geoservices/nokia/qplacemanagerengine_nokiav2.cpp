@@ -208,8 +208,7 @@ QPlaceManagerEngineNokiaV2::QPlaceManagerEngineNokiaV2(
 
     m_locales.append(QLocale());
 
-    m_appId = parameters.value(QStringLiteral("here.app_id")).toString();
-    m_appCode = parameters.value(QStringLiteral("here.token")).toString();
+    m_apiKey = parameters.value(QStringLiteral("here.apiKey")).toString();
 
     m_theme = parameters.value(IconThemeKey, QString()).toString();
 
@@ -237,7 +236,7 @@ QPlaceManagerEngineNokiaV2::~QPlaceManagerEngineNokiaV2() {}
 
 QPlaceDetailsReply *QPlaceManagerEngineNokiaV2::getPlaceDetails(const QString &placeId)
 {
-    QUrl requestUrl(QString::fromLatin1("http://") + m_uriProvider->getCurrentHost() +
+    QUrl requestUrl(QString::fromLatin1("https://") + m_uriProvider->getCurrentHost() +
                     QStringLiteral("/places/v1/places/") + placeId);
 
     QUrlQuery queryItems;
@@ -268,7 +267,7 @@ QPlaceContentReply *QPlaceManagerEngineNokiaV2::getPlaceContent(const QPlaceCont
 
        networkReply = sendRequest(u);
     } else {
-        QUrl requestUrl(QString::fromLatin1("http://") + m_uriProvider->getCurrentHost() +
+        QUrl requestUrl(QString::fromLatin1("https://") + m_uriProvider->getCurrentHost() +
                         QStringLiteral("/places/v1/places/") + request.placeId() +
                         QStringLiteral("/media/"));
 
@@ -410,7 +409,7 @@ QPlaceSearchReply *QPlaceManagerEngineNokiaV2::search(const QPlaceSearchRequest 
         networkReply = sendRequest(u);
     } else if (!query.searchTerm().isEmpty()) {
         // search term query
-        QUrl requestUrl(QString::fromLatin1("http://") + m_uriProvider->getCurrentHost() +
+        QUrl requestUrl(QString::fromLatin1("https://") + m_uriProvider->getCurrentHost() +
                         QStringLiteral("/places/v1/discover/search"));
 
         queryItems.addQueryItem(QStringLiteral("q"), query.searchTerm());
@@ -432,7 +431,7 @@ QPlaceSearchReply *QPlaceManagerEngineNokiaV2::search(const QPlaceSearchRequest 
 
         return reply;
     } else if (!query.recommendationId().isEmpty()) {
-        QUrl requestUrl(QString::fromLatin1("http://") + m_uriProvider->getCurrentHost() +
+        QUrl requestUrl(QString::fromLatin1("https://") + m_uriProvider->getCurrentHost() +
                         QStringLiteral("/places/v1/places/") + query.recommendationId() +
                         QStringLiteral("/related/recommended"));
 
@@ -443,7 +442,7 @@ QPlaceSearchReply *QPlaceManagerEngineNokiaV2::search(const QPlaceSearchRequest 
         networkReply = sendRequest(requestUrl);
     } else {
         // category search
-        QUrl requestUrl(QStringLiteral("http://") + m_uriProvider->getCurrentHost() +
+        QUrl requestUrl(QStringLiteral("https://") + m_uriProvider->getCurrentHost() +
              QStringLiteral("/places/v1/discover/explore"));
 
         QStringList ids;
@@ -498,7 +497,7 @@ QPlaceSearchSuggestionReply *QPlaceManagerEngineNokiaV2::searchSuggestions(const
         return reply;
     }
 
-    QUrl requestUrl(QString::fromLatin1("http://") + m_uriProvider->getCurrentHost() +
+    QUrl requestUrl(QString::fromLatin1("https://") + m_uriProvider->getCurrentHost() +
                     QStringLiteral("/places/v1/suggest"));
 
     QUrlQuery queryItems;
@@ -633,7 +632,7 @@ QPlaceReply *QPlaceManagerEngineNokiaV2::initializeCategories()
     for (auto it = m_tempTree.keyBegin(), end = m_tempTree.keyEnd(); it != end; ++it) {
         if (*it == QString())
             continue;
-        QUrl requestUrl(QString::fromLatin1("http://") + m_uriProvider->getCurrentHost() +
+        QUrl requestUrl(QString::fromLatin1("https://") + m_uriProvider->getCurrentHost() +
                         QStringLiteral("/places/v1/categories/places/") + *it);
         QNetworkReply *networkReply = sendRequest(requestUrl);
         connect(networkReply, SIGNAL(finished()), this, SLOT(categoryReplyFinished()));
@@ -831,8 +830,7 @@ void QPlaceManagerEngineNokiaV2::categoryReplyError()
 QNetworkReply *QPlaceManagerEngineNokiaV2::sendRequest(const QUrl &url)
 {
     QUrlQuery queryItems(url);
-    queryItems.addQueryItem(QStringLiteral("app_id"), m_appId);
-    queryItems.addQueryItem(QStringLiteral("app_code"), m_appCode);
+    queryItems.addQueryItem(QStringLiteral("apiKey"), m_apiKey);
 
     QUrl requestUrl = url;
     requestUrl.setQuery(queryItems);

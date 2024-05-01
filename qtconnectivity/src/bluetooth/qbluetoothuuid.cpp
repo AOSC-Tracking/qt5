@@ -834,8 +834,6 @@ QString QBluetoothUuid::serviceClassToString(QBluetoothUuid::ServiceClassUuid uu
     //: Connection management (Bluetooth)
     case QBluetoothUuid::BondManagement: return QBluetoothServiceDiscoveryAgent::tr("Bond Management");
     case QBluetoothUuid::ContinuousGlucoseMonitoring: return QBluetoothServiceDiscoveryAgent::tr("Continuous Glucose Monitoring");
-    default:
-        break;
     }
 
     return QString();
@@ -878,8 +876,6 @@ QString QBluetoothUuid::protocolToString(QBluetoothUuid::ProtocolUuid uuid)
     case QBluetoothUuid::McapControlChannel: return QBluetoothServiceDiscoveryAgent::tr("Multi-Channel Adaptation Protocol - Control");
     case QBluetoothUuid::McapDataChannel: return QBluetoothServiceDiscoveryAgent::tr("Multi-Channel Adaptation Protocol - Data");
     case QBluetoothUuid::L2cap: return QBluetoothServiceDiscoveryAgent::tr("Layer 2 Control Protocol");
-    default:
-        break;
     }
 
     return QString();
@@ -1081,13 +1077,13 @@ QString QBluetoothUuid::characteristicToString(CharacteristicType uuid)
     case QBluetoothUuid::BodyCompositionFeature: return QBluetoothServiceDiscoveryAgent::tr("Body Composition Feature");
     case QBluetoothUuid::BodyCompositionMeasurement: return QBluetoothServiceDiscoveryAgent::tr("Body Composition Measurement");
     case QBluetoothUuid::WeightMeasurement: return QBluetoothServiceDiscoveryAgent::tr("Weight Measurement");
+    case QBluetoothUuid::CharacteristicType::WeightScaleFeature:
+        return QBluetoothServiceDiscoveryAgent::tr("Weight Scale Feature");
     case QBluetoothUuid::UserControlPoint: return QBluetoothServiceDiscoveryAgent::tr("User Control Point");
     case QBluetoothUuid::MagneticFluxDensity2D: return QBluetoothServiceDiscoveryAgent::tr("Magnetic Flux Density 2D");
     case QBluetoothUuid::MagneticFluxDensity3D: return QBluetoothServiceDiscoveryAgent::tr("Magnetic Flux Density 3D");
     case QBluetoothUuid::Language: return QBluetoothServiceDiscoveryAgent::tr("Language");
     case QBluetoothUuid::BarometricPressureTrend: return QBluetoothServiceDiscoveryAgent::tr("Barometric Pressure Trend");
-    default:
-        break;
     }
 
     return QString();
@@ -1104,6 +1100,8 @@ QString QBluetoothUuid::characteristicToString(CharacteristicType uuid)
 QString QBluetoothUuid::descriptorToString(QBluetoothUuid::DescriptorType uuid)
 {
     switch (uuid) {
+    case QBluetoothUuid::UnknownDescriptorType:
+        break; // returns {} below
     case QBluetoothUuid::CharacteristicExtendedProperties:
         return QBluetoothServiceDiscoveryAgent::tr("Characteristic Extended Properties");
     case QBluetoothUuid::CharacteristicUserDescription:
@@ -1128,8 +1126,6 @@ QString QBluetoothUuid::descriptorToString(QBluetoothUuid::DescriptorType uuid)
         return QBluetoothServiceDiscoveryAgent::tr("Environmental Sensing Measurement");
     case QBluetoothUuid::EnvironmentalSensingTriggerSetting:
         return QBluetoothServiceDiscoveryAgent::tr("Environmental Sensing Trigger Setting");
-    default:
-        break;
     }
 
     return QString();

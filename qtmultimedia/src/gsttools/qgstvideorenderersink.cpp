@@ -368,7 +368,8 @@ static GstGLContext *gstGLDisplayContext(QAbstractVideoSurface *surface)
     if (!nativeContext)
         qWarning() << "Could not find resource for" << contextName;
 
-    GstGLContext *appContext = gst_gl_context_new_wrapped(display, (guintptr)nativeContext, glPlatform, GST_GL_API_ANY);
+    GstGLAPI glApi = QOpenGLContext::openGLModuleType() == QOpenGLContext::LibGL ? GST_GL_API_OPENGL : GST_GL_API_GLES2;
+    GstGLContext *appContext = gst_gl_context_new_wrapped(display, (guintptr)nativeContext, glPlatform, glApi);
     if (!appContext)
         qWarning() << "Could not create wrappped context for platform:" << glPlatform;
 

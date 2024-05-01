@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2022 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
@@ -75,12 +75,11 @@
 
     \section2 Visual Studio Tools
 
-    The \l {Qt VS Tools} allows programmers to create, build, debug
-    and run Qt applications from within non-Express versions of Microsoft Visual Studio
-    2013 and later. The add-in contains project wizards, Qt project import/export
-    support, integrated Qt resource manager and automated build setup for
-    the Qt Meta-Object Compiler, User Interface Compiler, and Resource
-    Compiler.
+    \l {Qt VS Tools} enables programmers to create, build, debug, and run
+    Qt applications from Microsoft Visual Studio. It contains project wizards,
+    Qt project import and export support, integrated Qt resource manager,
+    and automated build setup for the Qt Meta-Object Compiler, User Interface
+    Compiler, and Resource Compiler.
 
 */
 
@@ -443,17 +442,12 @@
     for building Qt 5 from source.
 
     \list
-        \li \l ActivePerl - Install a recent version of ActivePerl
-            (\l{http://www.activestate.com/activeperl}{download page}) and add
+        \li \l Perl - Install a recent version of perl (for instance
+            (\l{https://strawberryperl.com/}{Strawberry Perl}) and add
            the installation location to your \c PATH.
         \li Python - Install Python from the \l{http://www.python.org/download/}{here}
            and add the installation location to your \c PATH.
     \endlist
-
-    \note Please make sure that the \c perl executable from ActivePerl is found
-           in the path before the perl executable provided by msysgit, since the
-           latter is outdated.
-
 
     ANGLE depends on these extra tools from the \l{GnuWin32 Project}{GnuWin32} and
     \l {http://sourceforge.net/projects/winflexbison/}{Win flex-bison}
@@ -1044,10 +1038,6 @@
 
     When looking at the plugin DLLs the exact same dependencies
     are listed.
-
-    From Qt version 5.2 onwards, the officially supported version
-    for OpenSSL is 1.0.0 or later. Versions >= 0.9.7 and < 1.0.0 might
-    work, but are not guaranteed to.
 
     \section2 Qt Plugins
 

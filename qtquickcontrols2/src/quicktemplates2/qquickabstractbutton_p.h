@@ -209,6 +209,7 @@ protected:
 #if QT_CONFIG(accessibility)
     void accessibilityActiveChanged(bool active) override;
     QAccessible::Role accessibleRole() const override;
+    Q_INVOKABLE void accessiblePressAction();
 #endif
 
 private:

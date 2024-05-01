@@ -1,7 +1,6 @@
 TARGET = QtHelp
 
 QT = core-private gui widgets sql
-QT_PRIVATE = network
 
 DEFINES += QHELP_LIB
 

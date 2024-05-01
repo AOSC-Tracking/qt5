@@ -1,15 +1,3 @@
-Notes for AOSC Maintainers
-==========================
-
-- This is a tarball import with all Qt components and the extra QtWebKit.
-- The original Qt sources are pulled from KDE's LTS repository.
-
-https://invent.kde.org/qt/qt/qt5
-
-- To generate a new snapshot for this tracking repository, use qt5-repack.sh.
-
-https://github.com/AOSC-Dev/scriptlets/blob/master/qt5-repack.sh
-
 HOW TO BUILD QT5
 ================
 

@@ -171,6 +171,7 @@ void QQuickStackLayout::itemChange(QQuickItem::ItemChange change, const QQuickIt
     QQuickLayout::itemChange(change, value);
 
     if (change == ItemChildRemovedChange) {
+        m_cachedItemSizeHints.remove(value.item);
         invalidate();
     } else if (change == ItemChildAddedChange) {
         invalidate();
@@ -192,10 +193,8 @@ QSizeF QQuickStackLayout::sizeHint(Qt::SizeHint whichSizeHint) const
         maxS = QSizeF(std::numeric_limits<qreal>::infinity(), std::numeric_limits<qreal>::infinity());
 
         const int count = itemCount();
-        m_cachedItemSizeHints.resize(count);
         for (int i = 0; i < count; ++i) {
-            SizeHints &hints = m_cachedItemSizeHints[i];
-            QQuickStackLayout::collectItemSizeHints(itemAt(i), hints.array);
+            SizeHints &hints = cachedItemSizeHints(i);
             minS = minS.expandedTo(hints.min());
             prefS = prefS.expandedTo(hints.pref());
             //maxS = maxS.boundedTo(hints.max());       // Can be resized to be larger than any of its items.
@@ -256,11 +255,12 @@ void QQuickStackLayout::setAlignment(QQuickItem * /*item*/, Qt::Alignment /*alig
 
 void QQuickStackLayout::invalidate(QQuickItem *childItem)
 {
-    const int indexOfChild = indexOf(childItem);
-    if (indexOfChild >= 0 && indexOfChild < m_cachedItemSizeHints.count()) {
-        m_cachedItemSizeHints[indexOfChild].min() = QSizeF();
-        m_cachedItemSizeHints[indexOfChild].pref() = QSizeF();
-        m_cachedItemSizeHints[indexOfChild].max() = QSizeF();
+    ensureLayoutItemsUpdated();
+    if (childItem) {
+        SizeHints &hints = m_cachedItemSizeHints[childItem];
+        hints.min() = QSizeF();
+        hints.pref() = QSizeF();
+        hints.max() = QSizeF();
     }
 
     for (int i = 0; i < Qt::NSizeHints; ++i)
@@ -294,6 +294,16 @@ void QQuickStackLayout::updateLayoutItems()
     }
 }
 
+QQuickStackLayout::SizeHints &QQuickStackLayout::cachedItemSizeHints(int index) const
+{
+    QQuickItem *item = itemAt(index);
+    Q_ASSERT(item);
+    SizeHints &hints = m_cachedItemSizeHints[item];     // will create an entry if it doesn't exist
+    if (!hints.min().isValid())
+        QQuickStackLayout::collectItemSizeHints(item, hints.array);
+    return hints;
+}
+
 void QQuickStackLayout::rearrange(const QSizeF &newSize)
 {
     Q_D(QQuickStackLayout);
@@ -305,7 +315,7 @@ void QQuickStackLayout::rearrange(const QSizeF &newSize)
 
     if (d->currentIndex == -1 || d->currentIndex >= m_cachedItemSizeHints.count())
         return;
-    QQuickStackLayout::SizeHints &hints = m_cachedItemSizeHints[d->currentIndex];
+    QQuickStackLayout::SizeHints &hints = cachedItemSizeHints(d->currentIndex);
     QQuickItem *item = itemAt(d->currentIndex);
     Q_ASSERT(item);
     item->setPosition(QPointF(0,0));    // ### respect alignment?

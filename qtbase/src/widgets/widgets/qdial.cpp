@@ -94,6 +94,8 @@ int QDialPrivate::bound(int val) const
     if (wrapping) {
         if ((val >= minimum) && (val <= maximum))
             return val;
+        if (minimum == maximum)
+            return minimum;
         val = minimum + ((val - minimum) % (maximum - minimum));
         if (val < minimum)
             val += maximum - minimum;
@@ -222,7 +224,7 @@ int QDialPrivate::valueFromPoint(const QPoint &p) const
 
     If you are using the mouse wheel to adjust the dial, the increment
     value is determined by the lesser value of
-    \l{QApplication::wheelScrollLines()} {wheelScrollLines} multipled
+    \l{QApplication::wheelScrollLines()} {wheelScrollLines} multiplied
     by \l {QAbstractSlider::singleStep} {singleStep}, and
     \l {QAbstractSlider::pageStep} {pageStep}.
 

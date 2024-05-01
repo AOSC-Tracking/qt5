@@ -52,6 +52,7 @@
 
 #include <QtWaylandClient/private/wayland-wayland-client-protocol.h>
 
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
 
@@ -61,6 +62,9 @@
 #  ifndef MFD_CLOEXEC
 #    define MFD_CLOEXEC     0x0001U
 #  endif
+#  ifndef MFD_ALLOW_SEALING
+#    define MFD_ALLOW_SEALING 0x0002U
+#  endif
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -68,14 +72,16 @@ QT_BEGIN_NAMESPACE
 namespace QtWaylandClient {
 
 QWaylandShmBuffer::QWaylandShmBuffer(QWaylandDisplay *display,
-                     const QSize &size, QImage::Format format, int scale)
+                     const QSize &size, QImage::Format format, qreal scale)
 {
     int stride = size.width() * 4;
     int alloc = stride * size.height();
     int fd = -1;
 
-#ifdef SYS_memfd_create
-    fd = syscall(SYS_memfd_create, "wayland-shm", MFD_CLOEXEC);
+#if defined(SYS_memfd_create) && defined(F_SEAL_SEAL)
+    fd = syscall(SYS_memfd_create, "wayland-shm", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    if (fd >= 0)
+        fcntl(fd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_SEAL);
 #endif
 
     QScopedPointer<QFile> filePointer;
@@ -108,7 +114,7 @@ QWaylandShmBuffer::QWaylandShmBuffer(QWaylandDisplay *display,
     QWaylandShm* shm = display->shm();
     wl_shm_format wl_format = shm->formatFrom(format);
     mImage = QImage(data, size.width(), size.height(), stride, format);
-    mImage.setDevicePixelRatio(qreal(scale));
+    mImage.setDevicePixelRatio(scale);
 
     mShmPool = wl_shm_create_pool(shm->object(), fd, alloc);
     init(wl_shm_pool_create_buffer(mShmPool,0, size.width(), size.height(),
@@ -180,8 +186,6 @@ void QWaylandShmBackingStore::beginPaint(const QRegion &region)
     mPainting = true;
     ensureSize();
 
-    waylandWindow()->setCanResize(false);
-
     if (mBackBuffer->image()->hasAlphaChannel()) {
         QPainter p(paintDevice());
         p.setCompositionMode(QPainter::CompositionMode_Source);
@@ -196,7 +200,6 @@ void QWaylandShmBackingStore::endPaint()
     mPainting = false;
     if (mPendingFlush)
         flush(window(), mPendingRegion, QPoint());
-    waylandWindow()->setCanResize(true);
 }
 
 void QWaylandShmBackingStore::ensureSize()
@@ -271,7 +274,7 @@ QWaylandShmBuffer *QWaylandShmBackingStore::getBuffer(const QSize &size)
 void QWaylandShmBackingStore::resize(const QSize &size)
 {
     QMargins margins = windowDecorationMargins();
-    int scale = waylandWindow()->scale();
+    qreal scale = waylandWindow()->scale();
     QSize sizeWithMargins = (size + QSize(margins.left()+margins.right(),margins.top()+margins.bottom())) * scale;
 
     // We look for a free buffer to draw into. If the buffer is not the last buffer we used,

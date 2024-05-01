@@ -129,6 +129,7 @@ public:
     HANDLE hSemaphore = nullptr;
     HANDLE hResultsMutex = nullptr;
     QAtomicInt waiting;
+    QAtomicInt signalSent;
     QQueue<IOResult> results;
 };
 
@@ -395,16 +396,45 @@ void QWinOverlappedIoNotifierPrivate::notify(DWORD numberOfBytes, DWORD errorCod
     Q_Q(QWinOverlappedIoNotifier);
     WaitForSingleObject(hResultsMutex, INFINITE);
     results.enqueue(IOResult(numberOfBytes, errorCode, overlapped));
-    ReleaseMutex(hResultsMutex);
     ReleaseSemaphore(hSemaphore, 1, NULL);
-    if (!waiting)
+    ReleaseMutex(hResultsMutex);
+    // Do not send a signal if we didn't process the previous one.
+    // This is done to prevent soft memory leaks when working in a completely
+    // synchronous way.
+    if (!waiting && !signalSent.loadAcquire()) {
+        signalSent.storeRelease(1);
         emit q->_q_notify();
+    }
 }
 
 void QWinOverlappedIoNotifierPrivate::_q_notified()
 {
-    if (WaitForSingleObject(hSemaphore, 0) == WAIT_OBJECT_0)
-        dispatchNextIoResult();
+    Q_Q(QWinOverlappedIoNotifier);
+    signalSent.storeRelease(0); // signal processed - ready for a new one
+    if (WaitForSingleObject(hSemaphore, 0) == WAIT_OBJECT_0) {
+        // As we do not queue signals anymore, we need to process the whole
+        // queue at once.
+        WaitForSingleObject(hResultsMutex, INFINITE);
+        QQueue<IOResult> values;
+        results.swap(values);
+        // Decreasing the semaphore count to keep it in sync with the number
+        // of messages in queue. As ReleaseSemaphore does not accept negative
+        // values, this is sort of a recommended way to go:
+        // https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-releasesemaphore#remarks
+        int numToDecrease = values.size() - 1;
+        while (numToDecrease > 0) {
+            WaitForSingleObject(hSemaphore, 0);
+            --numToDecrease;
+        }
+        ReleaseMutex(hResultsMutex);
+        // 'q' can go out of scope if the user decides to close the serial port
+        // while processing some answer. So we need to guard against that.
+        QPointer<QWinOverlappedIoNotifier> qptr(q);
+        while (!values.empty() && qptr) {
+            IOResult ioresult = values.dequeue();
+            emit qptr->notified(ioresult.numberOfBytes, ioresult.errorCode, ioresult.overlapped);
+        }
+    }
 }
 
 OVERLAPPED *QWinOverlappedIoNotifierPrivate::dispatchNextIoResult()

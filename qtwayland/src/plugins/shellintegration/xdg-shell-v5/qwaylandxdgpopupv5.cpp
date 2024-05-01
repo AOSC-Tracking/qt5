@@ -47,18 +47,21 @@ QT_BEGIN_NAMESPACE
 
 namespace QtWaylandClient {
 
-QWaylandXdgPopupV5::QWaylandXdgPopupV5(struct ::xdg_popup_v5 *popup, QWaylandWindow *window)
+QWaylandXdgPopupV5::QWaylandXdgPopupV5(struct ::xdg_popup_v5 *popup, QWaylandWindow* parent, QWaylandWindow *window)
     : QWaylandShellSurface(window)
     , QtWayland::xdg_popup_v5(popup)
+    , m_parent(parent)
     , m_window(window)
 {
     if (window->display()->windowExtension())
         m_extendedWindow = new QWaylandExtendedSurface(window);
+    m_parent->addChildPopup(m_window);
 }
 
 QWaylandXdgPopupV5::~QWaylandXdgPopupV5()
 {
     xdg_popup_destroy(object());
+    m_parent->removeChildPopup(m_window);
     delete m_extendedWindow;
 }
 

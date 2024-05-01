@@ -40,8 +40,10 @@
   on iOS, where policy dictates that all web content is displayed using the
   operating system's web view.
 
-  On Windows, Linux, and \macos, Qt \WebView depends on the \l{Qt WebEngine}
-  module to render content.
+  On Windows and Linux, Qt \WebView depends on the \l{Qt WebEngine} module to render
+  content.
+
+  On \macos, the system web view is used in the same manner as iOS.
 
   \section1 Prerequisites
 
@@ -59,6 +61,15 @@
   Due to platform limitations, overlapping the WebView with other QML components
   is not supported. Doing this will have unpredictable results which may differ
   from platform to platform.
+
+  \section1 Platform notes
+
+  \secion2 Android
+
+  From API level 30 the native Android WebView will have file access disabled by default.
+  Since there are no APIs in QtWebView to override the file access property, the two environment variables
+  QT5_ANDROID_WEBVIEW_ALLOW_FILE_ACCESS and QT5_ANDROID_WEBVIEW_ALLOW_FILE_ACCESS_FROM_URLS are provided
+  which, when set, re-enables file access support again.
 
   \section1 Examples
 

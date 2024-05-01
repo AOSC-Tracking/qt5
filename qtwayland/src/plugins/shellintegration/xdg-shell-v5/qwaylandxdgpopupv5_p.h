@@ -70,7 +70,7 @@ class Q_WAYLAND_CLIENT_EXPORT QWaylandXdgPopupV5 : public QWaylandShellSurface
 {
     Q_OBJECT
 public:
-    QWaylandXdgPopupV5(struct ::xdg_popup_v5 *popup, QWaylandWindow *window);
+    QWaylandXdgPopupV5(struct ::xdg_popup_v5 *popup, QWaylandWindow* parent, QWaylandWindow *window);
     ~QWaylandXdgPopupV5() override;
 
 protected:
@@ -78,6 +78,7 @@ protected:
 
 private:
     QWaylandExtendedSurface *m_extendedWindow = nullptr;
+    QWaylandWindow *m_parent = nullptr;
     QWaylandWindow *m_window = nullptr;
 };
 

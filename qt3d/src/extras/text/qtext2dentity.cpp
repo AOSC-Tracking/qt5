@@ -304,8 +304,9 @@ void QText2DEntityPrivate::setCurrentGlyphRuns(const QVector<QGlyphRun> &runs)
         delete m_renderers.takeLast();
 
     while (m_renderers.size() < renderData.size()) {
-        DistanceFieldTextRenderer *renderer = new DistanceFieldTextRenderer(q_func());
+        DistanceFieldTextRenderer *renderer = new DistanceFieldTextRenderer();
         renderer->setColor(m_color);
+        renderer->setParent(q_func());
         m_renderers << renderer;
     }
 
@@ -485,3 +486,5 @@ void QText2DEntity::setHeight(float height)
 } // namespace Qt3DExtras
 
 QT_END_NAMESPACE
+
+#include "moc_qtext2dentity.cpp"

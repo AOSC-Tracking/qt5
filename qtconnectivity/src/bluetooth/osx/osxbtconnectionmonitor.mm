@@ -81,14 +81,8 @@ using namespace QT_NAMESPACE;
 
 - (void)dealloc
 {
-    [discoveryNotification unregister];
-    [discoveryNotification release];
-
-    for (IOBluetoothUserNotification *n in foundConnections)
-        [n unregister];
-
-    [foundConnections release];
-
+    Q_ASSERT_X(!monitor, "-dealloc",
+               "Connection monitor was not stopped, calling -stopMonitoring is required");
     [super dealloc];
 }
 
@@ -101,6 +95,15 @@ using namespace QT_NAMESPACE;
 
     if (!device)
         return;
+
+    if (!monitor) {
+        // Rather surprising: monitor == nullptr means we stopped monitoring.
+        // So apparently this thingie is still alive and keeps receiving
+        // notifications.
+        qCWarning(QT_BT_OSX,
+                  "Connection notification received in a monitor that was cancelled");
+        return;
+    }
 
     QT_BT_MAC_AUTORELEASEPOOL;
 
@@ -135,6 +138,20 @@ using namespace QT_NAMESPACE;
 
     Q_ASSERT_X(monitor, "-connectionClosedNotification:withDevice:", "invalid monitor (null)");
     monitor->deviceDisconnected(deviceAddress);
+}
+
+- (void)stopMonitoring
+{
+    monitor = nullptr;
+    [discoveryNotification unregister];
+    [discoveryNotification release];
+    discoveryNotification = nil;
+
+    for (IOBluetoothUserNotification *n in foundConnections)
+        [n unregister];
+
+    [foundConnections release];
+    foundConnections = nil;
 }
 
 @end

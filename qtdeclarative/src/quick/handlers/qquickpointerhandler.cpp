@@ -207,9 +207,11 @@ void QQuickPointerHandler::setCursorShape(Qt::CursorShape shape)
         return;
     d->cursorShape = shape;
     d->cursorSet = true;
-    QQuickItemPrivate *itemPriv = QQuickItemPrivate::get(parentItem());
-    itemPriv->hasCursorHandler = true;
-    itemPriv->setHasCursorInChild(true);
+    if (auto *par = qmlobject_cast<QQuickItem *>(parent())) {
+        QQuickItemPrivate *itemPriv = QQuickItemPrivate::get(par);
+        itemPriv->hasCursorHandler = true;
+        itemPriv->setHasCursorInChild(true);
+    }
     emit cursorShapeChanged();
 }
 
@@ -220,9 +222,11 @@ void QQuickPointerHandler::resetCursorShape()
         return;
     d->cursorShape = Qt::ArrowCursor;
     d->cursorSet = false;
-    QQuickItemPrivate *itemPriv = QQuickItemPrivate::get(parentItem());
-    itemPriv->hasCursorHandler = false;
-    itemPriv->setHasCursorInChild(itemPriv->hasCursor);
+    if (auto *parent = parentItem()) {
+        QQuickItemPrivate *itemPriv = QQuickItemPrivate::get(parent);
+        itemPriv->hasCursorHandler = false;
+        itemPriv->setHasCursorInChild(itemPriv->hasCursor);
+    }
     emit cursorShapeChanged();
 }
 
@@ -346,10 +350,16 @@ bool QQuickPointerHandler::approveGrabTransition(QQuickEventPoint *point, QObjec
                         existingPhGrabber->metaObject()->className() == metaObject()->className())
                     allowed = true;
             } else if ((d->grabPermissions & CanTakeOverFromItems)) {
+                allowed = true;
                 QQuickItem * existingItemGrabber = point->grabberItem();
-                if (existingItemGrabber && !((existingItemGrabber->keepMouseGrab() && point->pointerEvent()->asPointerMouseEvent()) ||
-                                             (existingItemGrabber->keepTouchGrab() && point->pointerEvent()->asPointerTouchEvent()))) {
-                    allowed = true;
+                QQuickWindowPrivate *winPriv = QQuickWindowPrivate::get(parentItem()->window());
+                const bool isMouse = point->pointerEvent()->asPointerMouseEvent();
+                const bool isTouch = point->pointerEvent()->asPointerTouchEvent();
+                if (existingItemGrabber &&
+                        ((existingItemGrabber->keepMouseGrab() &&
+                          (isMouse || winPriv->isDeliveringTouchAsMouse())) ||
+                         (existingItemGrabber->keepTouchGrab() && isTouch))) {
+                    allowed = false;
                     // If the handler wants to steal the exclusive grab from an Item, the Item can usually veto
                     // by having its keepMouseGrab flag set.  But an exception is if that Item is a parent that
                     // normally filters events (such as a Flickable): it needs to be possible for e.g. a
@@ -358,13 +368,18 @@ bool QQuickPointerHandler::approveGrabTransition(QQuickEventPoint *point, QObjec
                     // at first and then expects to be able to steal the grab later on.  It cannot respect
                     // Flickable's wishes in that case, because then it would never have a chance.
                     if (existingItemGrabber->keepMouseGrab() &&
-                            !(existingItemGrabber->filtersChildMouseEvents() && existingItemGrabber->isAncestorOf(parentItem()))) {
-                        QQuickWindowPrivate *winPriv = QQuickWindowPrivate::get(parentItem()->window());
+                            existingItemGrabber->filtersChildMouseEvents() && existingItemGrabber->isAncestorOf(parentItem())) {
                         if (winPriv->isDeliveringTouchAsMouse() && point->pointId() == winPriv->touchMouseId) {
-                            qCDebug(lcPointerHandlerGrab) << this << "wants to grab touchpoint" << point->pointId()
-                                << "but declines to steal grab from touch-mouse grabber with keepMouseGrab=true" << existingItemGrabber;
-                            allowed = false;
+                            qCDebug(lcPointerHandlerGrab) << this << "steals touchpoint" << point->pointId()
+                                << "despite parent touch-mouse grabber with keepMouseGrab=true" << existingItemGrabber;
+                            allowed = true;
                         }
+                    }
+                    if (!allowed) {
+                        qCDebug(lcPointerHandlerGrab) << this << "wants to grab point" << point->pointId()
+                                << "but declines to steal from grabber" << existingItemGrabber
+                                << "with keepMouseGrab=" << existingItemGrabber->keepMouseGrab()
+                                << "keepTouchGrab=" << existingItemGrabber->keepTouchGrab();
                     }
                 }
             }
@@ -406,6 +421,8 @@ bool QQuickPointerHandler::approveGrabTransition(QQuickEventPoint *point, QObjec
            This handler can take the exclusive grab from another handler of the same class.
     \value PointerHandler.CanTakeOverFromHandlersOfDifferentType
            This handler can take the exclusive grab from any kind of handler.
+    \value PointerHandler.CanTakeOverFromItems
+           This handler can take the exclusive grab from any type of Item.
     \value PointerHandler.CanTakeOverFromAnything
            This handler can take the exclusive grab from any type of Item or Handler.
     \value PointerHandler.ApprovesTakeOverByHandlersOfSameType
@@ -446,6 +463,14 @@ void QQuickPointerHandler::classBegin()
 
 void QQuickPointerHandler::componentComplete()
 {
+    Q_D(const QQuickPointerHandler);
+    if (d->cursorSet) {
+        if (auto *parent = parentItem()) {
+            QQuickItemPrivate *itemPriv = QQuickItemPrivate::get(parent);
+            itemPriv->hasCursorHandler = true;
+            itemPriv->setHasCursorInChild(true);
+        }
+    }
 }
 
 QQuickPointerEvent *QQuickPointerHandler::currentEvent()
@@ -719,3 +744,5 @@ bool QQuickPointerHandlerPrivate::dragOverThreshold(const QQuickEventPoint *poin
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qquickpointerhandler_p.cpp"

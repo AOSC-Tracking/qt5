@@ -462,7 +462,12 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
         else
             channels[i].authMethod = priv->method;
 
-        if (priv->phase == QAuthenticatorPrivate::Done) {
+        if (priv->phase == QAuthenticatorPrivate::Done ||
+                (priv->phase == QAuthenticatorPrivate::Start
+                    && priv->method == QAuthenticatorPrivate::Ntlm)) {
+            if (priv->phase == QAuthenticatorPrivate::Start)
+                priv->phase = QAuthenticatorPrivate::Phase1;
+
             pauseConnection();
             if (!isProxy) {
                 if (channels[i].authenticationCredentialsSent) {
@@ -528,10 +533,23 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
     return false;
 }
 
-QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socket, QHttpNetworkReply *reply)
+// Used by the HTTP1 code-path
+QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socket,
+                                                          QHttpNetworkReply *reply)
+{
+    ParseRedirectResult result = parseRedirectResponse(reply);
+    if (result.errorCode != QNetworkReply::NoError) {
+        emitReplyError(socket, reply, result.errorCode);
+        return {};
+    }
+    return std::move(result.redirectUrl);
+}
+
+QHttpNetworkConnectionPrivate::ParseRedirectResult
+QHttpNetworkConnectionPrivate::parseRedirectResponse(QHttpNetworkReply *reply)
 {
     if (!reply->request().isFollowRedirects())
-        return QUrl();
+        return {{}, QNetworkReply::NoError};
 
     QUrl redirectUrl;
     const QList<QPair<QByteArray, QByteArray> > fields = reply->header();
@@ -542,17 +560,13 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
         }
     }
 
-    // If the location url is invalid/empty, we emit ProtocolUnknownError
-    if (!redirectUrl.isValid()) {
-        emitReplyError(socket, reply, QNetworkReply::ProtocolUnknownError);
-        return QUrl();
-    }
+    // If the location url is invalid/empty, we return ProtocolUnknownError
+    if (!redirectUrl.isValid())
+        return {{}, QNetworkReply::ProtocolUnknownError};
 
     // Check if we have exceeded max redirects allowed
-    if (reply->request().redirectCount() <= 0) {
-        emitReplyError(socket, reply, QNetworkReply::TooManyRedirectsError);
-        return QUrl();
-    }
+    if (reply->request().redirectCount() <= 0)
+        return {{}, QNetworkReply::TooManyRedirectsError};
 
     // Resolve the URL if it's relative
     if (redirectUrl.isRelative())
@@ -573,8 +587,7 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
             if (priorUrl.host() != redirectUrl.host()
                 || priorUrl.scheme() != redirectUrl.scheme()
                 || priorUrl.port() != redirectUrl.port()) {
-                emitReplyError(socket, reply, QNetworkReply::InsecureRedirectError);
-                return QUrl();
+                return {{}, QNetworkReply::InsecureRedirectError};
             }
             break;
         case QNetworkRequest::UserVerifiedRedirectPolicy:
@@ -583,10 +596,9 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
             Q_ASSERT(!"Unexpected redirect policy");
         }
     } else {
-        emitReplyError(socket, reply, QNetworkReply::ProtocolUnknownError);
-        return QUrl();
+        return {{}, QNetworkReply::ProtocolUnknownError};
     }
-    return redirectUrl;
+    return {std::move(redirectUrl), QNetworkReply::NoError};
 }
 
 void QHttpNetworkConnectionPrivate::createAuthorization(QAbstractSocket *socket, QHttpNetworkRequest &request)
@@ -597,10 +609,20 @@ void QHttpNetworkConnectionPrivate::createAuthorization(QAbstractSocket *socket,
 
     // Send "Authorization" header, but not if it's NTLM and the socket is already authenticated.
     if (channels[i].authMethod != QAuthenticatorPrivate::None) {
-        if ((channels[i].authMethod != QAuthenticatorPrivate::Ntlm && request.headerField("Authorization").isEmpty()) || channels[i].lastStatus == 401) {
-            QAuthenticatorPrivate *priv = QAuthenticatorPrivate::getPrivate(channels[i].authenticator);
-            if (priv && priv->method != QAuthenticatorPrivate::None) {
-                QByteArray response = priv->calculateResponse(request.methodName(), request.uri(false), request.url().host());
+        QAuthenticatorPrivate *priv =
+                QAuthenticatorPrivate::getPrivate(channels[i].authenticator);
+        if (priv && priv->method != QAuthenticatorPrivate::None) {
+            const bool ntlmNego = priv->method == QAuthenticatorPrivate::Ntlm
+                    || priv->method == QAuthenticatorPrivate::Negotiate;
+            const bool authNeeded = channels[i].lastStatus == 401;
+            const bool ntlmNegoOk = ntlmNego && authNeeded
+                    && (priv->phase != QAuthenticatorPrivate::Done
+                        || !channels[i].authenticationCredentialsSent);
+            const bool otherOk =
+                    !ntlmNego && (authNeeded || request.headerField("Authorization").isEmpty());
+            if (ntlmNegoOk || otherOk) {
+                QByteArray response = priv->calculateResponse(
+                        request.methodName(), request.uri(false), request.url().host());
                 request.setHeaderField("Authorization", response);
                 channels[i].authenticationCredentialsSent = true;
             }
@@ -610,10 +632,19 @@ void QHttpNetworkConnectionPrivate::createAuthorization(QAbstractSocket *socket,
 #if QT_CONFIG(networkproxy)
     // Send "Proxy-Authorization" header, but not if it's NTLM and the socket is already authenticated.
     if (channels[i].proxyAuthMethod != QAuthenticatorPrivate::None) {
-        if (!(channels[i].proxyAuthMethod == QAuthenticatorPrivate::Ntlm && channels[i].lastStatus != 407)) {
-            QAuthenticatorPrivate *priv = QAuthenticatorPrivate::getPrivate(channels[i].proxyAuthenticator);
-            if (priv && priv->method != QAuthenticatorPrivate::None) {
-                QByteArray response = priv->calculateResponse(request.methodName(), request.uri(false), networkProxy.hostName());
+        QAuthenticatorPrivate *priv =
+                QAuthenticatorPrivate::getPrivate(channels[i].proxyAuthenticator);
+        if (priv && priv->method != QAuthenticatorPrivate::None) {
+            const bool ntlmNego = channels[i].proxyAuthMethod == QAuthenticatorPrivate::Ntlm
+                    || channels[i].proxyAuthMethod == QAuthenticatorPrivate::Negotiate;
+            const bool proxyAuthNeeded = channels[i].lastStatus == 407;
+            const bool ntlmNegoOk = ntlmNego && proxyAuthNeeded
+                    && (priv->phase != QAuthenticatorPrivate::Done
+                        || !channels[i].proxyCredentialsSent);
+            const bool otherOk = !ntlmNego;
+            if (ntlmNegoOk || otherOk) {
+                QByteArray response = priv->calculateResponse(
+                        request.methodName(), request.uri(false), networkProxy.hostName());
                 request.setHeaderField("Proxy-Authorization", response);
                 channels[i].proxyCredentialsSent = true;
             }
@@ -1272,11 +1303,10 @@ void QHttpNetworkConnectionPrivate::_q_hostLookupFinished(const QHostInfo &info)
                 emitReplyError(channels[0].socket, currentReply, QNetworkReply::HostNotFoundError);
             }
         } else {
-            // Should not happen: we start a host lookup before sending a request,
-            // so it's natural to have requests either in SPDY/HTTP/2 queue,
-            // or in low/high priority queues.
-            qWarning("QHttpNetworkConnectionPrivate::_q_hostLookupFinished"
-                     " could not de-queue request, failed to report HostNotFoundError");
+            // We can end up here if a request has been aborted or otherwise failed (e.g. timeout)
+            // before the host lookup was finished.
+            qDebug("QHttpNetworkConnectionPrivate::_q_hostLookupFinished"
+                   " could not de-queue request, failed to report HostNotFoundError");
             networkLayerState = QHttpNetworkConnectionPrivate::Unknown;
         }
     }
@@ -1446,7 +1476,7 @@ void QHttpNetworkConnection::setCacheProxy(const QNetworkProxy &networkProxy)
     d->networkProxy = networkProxy;
     // update the authenticator
     if (!d->networkProxy.user().isEmpty()) {
-        for (int i = 0; i < d->activeChannelCount; ++i) {
+        for (int i = 0; i < d->channelCount; ++i) {
             d->channels[i].proxyAuthenticator.setUser(d->networkProxy.user());
             d->channels[i].proxyAuthenticator.setPassword(d->networkProxy.password());
         }
@@ -1462,7 +1492,7 @@ QNetworkProxy QHttpNetworkConnection::cacheProxy() const
 void QHttpNetworkConnection::setTransparentProxy(const QNetworkProxy &networkProxy)
 {
     Q_D(QHttpNetworkConnection);
-    for (int i = 0; i < d->activeChannelCount; ++i)
+    for (int i = 0; i < d->channelCount; ++i)
         d->channels[i].setProxy(networkProxy);
 }
 

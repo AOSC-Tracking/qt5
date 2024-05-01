@@ -60,7 +60,7 @@ QWaylandXdgOutputManagerV1::QWaylandXdgOutputManagerV1(QWaylandDisplay* display,
 }
 
 QWaylandScreen::QWaylandScreen(QWaylandDisplay *waylandDisplay, int version, uint32_t id)
-    : QtWayland::wl_output(waylandDisplay->wl_registry(), id, qMin(version, 2))
+    : QtWayland::wl_output(waylandDisplay->wl_registry(), id, qMin(version, 3))
     , m_outputId(id)
     , mWaylandDisplay(waylandDisplay)
     , mOutputName(QStringLiteral("Screen%1").arg(id))
@@ -81,6 +81,8 @@ QWaylandScreen::~QWaylandScreen()
 {
     if (zxdg_output_v1::isInitialized())
         zxdg_output_v1::destroy();
+    if (wl_output::isInitialized() && wl_output_get_version(wl_output::object()) >= WL_OUTPUT_RELEASE_SINCE_VERSION)
+        wl_output::release();
 }
 
 uint QWaylandScreen::requiredEvents() const

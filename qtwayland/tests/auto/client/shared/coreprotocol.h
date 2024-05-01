@@ -273,6 +273,9 @@ public:
     OutputData m_data;
     int m_version = 1; // TODO: remove on libwayland upgrade
 
+Q_SIGNALS:
+    void outputBound(Resource *resource);
+
 protected:
     void output_bind_resource(Resource *resource) override;
 };
@@ -364,6 +367,7 @@ public:
     uint sendUp(wl_client *client, int id);
     void sendMotion(wl_client *client, const QPointF &position, int id);
     void sendFrame(wl_client *client);
+    void sendCancel(wl_client *client);
 
     Seat *m_seat = nullptr;
 };

@@ -40,6 +40,7 @@
 #include "qwaylandeglwindow.h"
 
 #include <QtWaylandClient/private/qwaylandscreen_p.h>
+#include <QtWaylandClient/private/qwaylandsurface_p.h>
 #include "qwaylandglcontext.h"
 
 #include <QtEglSupport/private/qeglconvenience_p.h>
@@ -57,17 +58,8 @@ namespace QtWaylandClient {
 QWaylandEglWindow::QWaylandEglWindow(QWindow *window, QWaylandDisplay *display)
     : QWaylandWindow(window, display)
     , m_clientBufferIntegration(static_cast<QWaylandEglClientBufferIntegration *>(mDisplay->clientBufferIntegration()))
+    , m_format(window->requestedFormat())
 {
-    QSurfaceFormat fmt = window->requestedFormat();
-    if (mDisplay->supportsWindowDecoration())
-        fmt.setAlphaBufferSize(8);
-    m_eglConfig = q_configFromGLFormat(m_clientBufferIntegration->eglDisplay(), fmt);
-    m_format = q_glFormatFromConfig(m_clientBufferIntegration->eglDisplay(), m_eglConfig, fmt);
-
-    // Do not create anything from here. This platform window may belong to a
-    // RasterGLSurface window which may have pure raster content.  In this case, where the
-    // window is never actually made current, creating a wl_egl_window and EGL surface
-    // should be avoided.
 }
 
 QWaylandEglWindow::~QWaylandEglWindow()
@@ -124,6 +116,7 @@ void QWaylandEglWindow::updateSurface(bool create)
         }
         mOffset = QPoint();
     } else {
+        QReadLocker locker(&mSurfaceLock);
         if (m_waylandEglWindow) {
             int current_width, current_height;
             static bool disableResizeCheck = qgetenv("QT_WAYLAND_DISABLE_RESIZECHECK").toInt();
@@ -138,14 +131,20 @@ void QWaylandEglWindow::updateSurface(bool create)
 
                 m_resize = true;
             }
-        } else if (create && wlSurface()) {
-            m_waylandEglWindow = wl_egl_window_create(wlSurface(), sizeWithMargins.width(), sizeWithMargins.height());
+        } else if (create && mSurface) {
+            m_waylandEglWindow = wl_egl_window_create(mSurface->object(), sizeWithMargins.width(), sizeWithMargins.height());
             m_requestedSize = sizeWithMargins;
         }
 
         if (!m_eglSurface && m_waylandEglWindow && create) {
             EGLNativeWindowType eglw = (EGLNativeWindowType) m_waylandEglWindow;
-            m_eglSurface = eglCreateWindowSurface(m_clientBufferIntegration->eglDisplay(), m_eglConfig, eglw, 0);
+            QSurfaceFormat fmt = window()->requestedFormat();
+
+            if (mDisplay->supportsWindowDecoration())
+                fmt.setAlphaBufferSize(8);
+            EGLConfig eglConfig = q_configFromGLFormat(m_clientBufferIntegration->eglDisplay(), fmt);
+            m_format = q_glFormatFromConfig(m_clientBufferIntegration->eglDisplay(), eglConfig);
+            m_eglSurface = eglCreateWindowSurface(m_clientBufferIntegration->eglDisplay(), eglConfig, eglw, 0);
             if (Q_UNLIKELY(m_eglSurface == EGL_NO_SURFACE))
                 qCWarning(lcQpaWayland, "Could not create EGL surface (EGL error 0x%x)\n", eglGetError());
         }
@@ -214,3 +213,5 @@ void QWaylandEglWindow::bindContentFBO()
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qwaylandeglwindow.cpp"

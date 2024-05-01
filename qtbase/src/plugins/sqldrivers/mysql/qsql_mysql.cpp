@@ -309,6 +309,7 @@ static QMetaType::Type qDecodeMYSQLType(int mysqltype, uint flags)
     case FIELD_TYPE_MEDIUM_BLOB :
     case FIELD_TYPE_LONG_BLOB :
     case FIELD_TYPE_GEOMETRY :
+    case MYSQL_TYPE_JSON :
         type = (flags & BINARY_FLAG) ? QMetaType::QByteArray : QMetaType::QString;
         break;
     default:
@@ -347,7 +348,8 @@ static bool qIsBlob(int t)
     return t == MYSQL_TYPE_TINY_BLOB
            || t == MYSQL_TYPE_BLOB
            || t == MYSQL_TYPE_MEDIUM_BLOB
-           || t == MYSQL_TYPE_LONG_BLOB;
+           || t == MYSQL_TYPE_LONG_BLOB
+           || t == MYSQL_TYPE_JSON;
 }
 
 static bool qIsInteger(int t)
@@ -360,12 +362,9 @@ static bool qIsInteger(int t)
 
 void QMYSQLResultPrivate::bindBlobs()
 {
-    int i;
-    const MYSQL_FIELD *fieldInfo;
     MYSQL_BIND *bind;
-
-    for(i = 0; i < fields.count(); ++i) {
-        fieldInfo = fields.at(i).myField;
+    for (int i = 0; i < fields.count(); ++i) {
+        const MYSQL_FIELD *fieldInfo = fields.at(i).myField;
         if (qIsBlob(inBinds[i].buffer_type) && meta && fieldInfo) {
             bind = &inBinds[i];
             bind->buffer_length = fieldInfo->max_length;
@@ -378,7 +377,6 @@ void QMYSQLResultPrivate::bindBlobs()
 
 bool QMYSQLResultPrivate::bindInValues()
 {
-    MYSQL_BIND *bind;
     int i = 0;
 
     if (!meta)
@@ -394,7 +392,7 @@ bool QMYSQLResultPrivate::bindInValues()
     const MYSQL_FIELD *fieldInfo;
 
     while((fieldInfo = mysql_fetch_field(meta))) {
-        bind = &inBinds[i];
+        MYSQL_BIND *bind = &inBinds[i];
 
         QMyField &f = fields[i];
         f.myField = fieldInfo;
@@ -920,9 +918,9 @@ bool QMYSQLResult::prepare(const QString& query)
         return false;
     }
 
-    if (mysql_stmt_param_count(d->stmt) > 0) {// allocate memory for outvalues
-        d->outBinds = new MYSQL_BIND[mysql_stmt_param_count(d->stmt)];
-    }
+    const auto paramCount = mysql_stmt_param_count(d->stmt);
+    if (paramCount > 0) // allocate memory for outvalues
+        d->outBinds = new MYSQL_BIND[paramCount]();
 
     setSelect(d->bindInValues());
     d->preparedQuery = true;
@@ -1595,3 +1593,5 @@ bool QMYSQLDriver::isIdentifierEscaped(const QString &identifier, IdentifierType
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qsql_mysql_p.cpp"

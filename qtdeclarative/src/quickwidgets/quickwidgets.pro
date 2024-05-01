@@ -7,9 +7,13 @@ DEFINES   += QT_NO_URL_CAST_FROM_STRING QT_NO_INTEGER_EVENT_COORDINATES QT_NO_FO
 HEADERS += \
     qquickwidget.h \
     qquickwidget_p.h \
-    qtquickwidgetsglobal.h
+    qtquickwidgetsglobal.h \
+    qaccessiblequickwidget_p.h \
+    qaccessiblequickwidgetfactory_p.h
 
 SOURCES += \
-    qquickwidget.cpp
+    qquickwidget.cpp \
+    qaccessiblequickwidget.cpp \
+    qaccessiblequickwidgetfactory.cpp
 
 load(qt_module)

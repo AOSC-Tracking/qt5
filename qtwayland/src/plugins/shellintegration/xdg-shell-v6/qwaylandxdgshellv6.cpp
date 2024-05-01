@@ -174,12 +174,15 @@ QWaylandXdgSurfaceV6::Popup::Popup(QWaylandXdgSurfaceV6 *xdgSurface, QWaylandXdg
     , m_xdgSurface(xdgSurface)
     , m_parent(parent)
 {
+    m_parent->window()->addChildPopup(m_xdgSurface->window());
 }
 
 QWaylandXdgSurfaceV6::Popup::~Popup()
 {
     if (isInitialized())
         destroy();
+
+    m_parent->window()->removeChildPopup(m_xdgSurface->window());
 
     if (m_grabbing) {
         auto *shell = m_xdgSurface->m_shell;

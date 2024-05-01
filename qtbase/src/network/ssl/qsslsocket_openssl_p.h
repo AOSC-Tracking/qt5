@@ -100,6 +100,7 @@
 #include <openssl/rsa.h>
 #include <openssl/crypto.h>
 #include <openssl/tls1.h>
+#include <openssl/opensslv.h>
 
 #if QT_CONFIG(opensslv11)
 #include <openssl/dh.h>
@@ -134,6 +135,9 @@ public:
 
     bool inSetAndEmitError = false;
 
+    bool inSslRead = false;
+    bool renegotiated = false;
+
     // Platform specific functions
     void startClientEncryption() override;
     void startServerEncryption() override;
@@ -149,6 +153,10 @@ public:
     int handleNewSessionTicket(SSL *context);
     unsigned int tlsPskClientCallback(const char *hint, char *identity, unsigned int max_identity_len, unsigned char *psk, unsigned int max_psk_len);
     unsigned int tlsPskServerCallback(const char *identity, unsigned char *psk, unsigned int max_psk_len);
+
+    bool isInSslRead() const;
+    void setRenegotiated(bool renegotiated);
+
 #ifdef Q_OS_WIN
     void fetchCaRootForCert(const QSslCertificate &cert);
     void _q_caRootLoaded(QSslCertificate,QSslCertificate) override;
@@ -164,7 +172,13 @@ public:
     QVector<QSslError> ocspErrors;
     QByteArray ocspResponseDer;
 
-    Q_AUTOTEST_EXPORT static long setupOpenSslOptions(QSsl::SslProtocol protocol, QSsl::SslOptions sslOptions);
+#if OPENSSL_VERSION_MAJOR < 3
+    using qssloptions = unsigned long;
+#else
+    using qssloptions = uint64_t;
+#endif // OPENSSL_VERSION_MAJOR
+
+    Q_AUTOTEST_EXPORT static qssloptions setupOpenSslOptions(QSsl::SslProtocol protocol, QSsl::SslOptions sslOptions);
     static QSslCipher QSslCipher_from_SSL_CIPHER(const SSL_CIPHER *cipher);
     static QList<QSslCertificate> STACKOFX509_to_QSslCertificates(STACK_OF(X509) *x509);
     static QList<QSslError> verify(const QList<QSslCertificate> &certificateChain, const QString &hostName);

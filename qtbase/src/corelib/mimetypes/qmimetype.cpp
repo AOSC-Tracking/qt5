@@ -376,14 +376,17 @@ QStringList QMimeType::parentMimeTypes() const
 static void collectParentMimeTypes(const QString &mime, QStringList &allParents)
 {
     const QStringList parents = QMimeDatabasePrivate::instance()->mimeParents(mime);
+    QStringList newParents;
     for (const QString &parent : parents) {
         // I would use QSet, but since order matters I better not
-        if (!allParents.contains(parent))
+        if (!allParents.contains(parent)) {
             allParents.append(parent);
+            newParents.append(parent);
+        }
     }
     // We want a breadth-first search, so that the least-specific parent (octet-stream) is last
     // This means iterating twice, unfortunately.
-    for (const QString &parent : parents)
+    for (const QString &parent : newParents)
         collectParentMimeTypes(parent, allParents);
 }
 
@@ -529,3 +532,5 @@ QDebug operator<<(QDebug debug, const QMimeType &mime)
 #endif
 
 QT_END_NAMESPACE
+
+#include "moc_qmimetype.cpp"

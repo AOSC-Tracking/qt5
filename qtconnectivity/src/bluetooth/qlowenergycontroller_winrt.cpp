@@ -260,14 +260,22 @@ void QLowEnergyControllerPrivateWinRT::init()
 void QLowEnergyControllerPrivateWinRT::connectToDevice()
 {
     qCDebug(QT_BT_WINRT) << __FUNCTION__;
-    Q_Q(QLowEnergyController);
     if (remoteDevice.isNull()) {
         qWarning() << "Invalid/null remote device address";
         setError(QLowEnergyController::UnknownRemoteDeviceError);
         return;
     }
-
     setState(QLowEnergyController::ConnectingState);
+    // Queue the device connecting to happen in the background
+    QMetaObject::invokeMethod(this,
+                          &QLowEnergyControllerPrivateWinRT::doConnectToDevice,
+                          Qt::QueuedConnection);
+}
+
+void QLowEnergyControllerPrivateWinRT::doConnectToDevice()
+{
+    qCDebug(QT_BT_WINRT) << __FUNCTION__;
+    Q_Q(QLowEnergyController);
 
     ComPtr<IBluetoothLEDeviceStatics> deviceStatics;
     HRESULT hr = GetActivationFactory(HString::MakeReference(RuntimeClass_Windows_Devices_Bluetooth_BluetoothLEDevice).Get(), &deviceStatics);
@@ -634,10 +642,10 @@ void QLowEnergyControllerPrivateWinRT::discoverServiceDetails(const QBluetoothUu
     QThread *thread = new QThread;
     worker->moveToThread(thread);
     connect(thread, &QThread::started, worker, &QWinRTLowEnergyServiceHandler::obtainCharList);
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
-    connect(worker, &QWinRTLowEnergyServiceHandler::charListObtained,
-            [this, thread](const QBluetoothUuid &service, QHash<QLowEnergyHandle, QLowEnergyServicePrivate::CharData> charList
+    connect(worker, &QObject::destroyed, thread, &QObject::deleteLater);
+    connect(worker, &QWinRTLowEnergyServiceHandler::charListObtained, this,
+            [this](const QBluetoothUuid &service, QHash<QLowEnergyHandle, QLowEnergyServicePrivate::CharData> charList
             , QVector<QBluetoothUuid> indicateChars
             , QLowEnergyHandle startHandle, QLowEnergyHandle endHandle) {
         if (!serviceList.contains(service)) {
@@ -660,7 +668,6 @@ void QLowEnergyControllerPrivateWinRT::discoverServiceDetails(const QBluetoothUu
         Q_ASSERT_SUCCEEDED(hr);
 
         pointer->setState(QLowEnergyService::ServiceDiscovered);
-        thread->exit(0);
     });
     thread->start();
 }

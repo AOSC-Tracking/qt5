@@ -67,21 +67,23 @@ public:
     void setFilter() override {};
     QList<QUrl> selectedFiles() const override { return m_selectedFile; };
     void selectFile(const QUrl &file) override { Q_UNUSED(file) };
-    QUrl directory() const override { return QUrl(); };
-    void setDirectory(const QUrl &directory) override { Q_UNUSED(directory) };
+    QUrl directory() const override { return m_directory; }
+    void setDirectory(const QUrl &directory) override;
     bool defaultNameFilterDisables() const override { return false; };
     bool handleActivityResult(jint requestCode, jint resultCode, jobject data) override;
 
 private:
     QJNIObjectPrivate getFileDialogIntent(const QString &intentType);
     void takePersistableUriPermission(const QJNIObjectPrivate &uri);
-    void setIntentTitle(const QString &title);
+    void setInitialFileName(const QString &title);
+    void setInitialDirectoryUri(const QString &directory);
     void setOpenableCategory();
     void setAllowMultipleSelections(bool allowMultiple);
     void setMimeTypes();
 
     QEventLoop m_eventLoop;
     QList<QUrl> m_selectedFile;
+    QUrl m_directory;
     QJNIObjectPrivate m_intent;
     const QJNIObjectPrivate m_activity;
 };

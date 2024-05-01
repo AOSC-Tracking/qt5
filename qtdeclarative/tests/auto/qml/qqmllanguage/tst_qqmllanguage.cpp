@@ -28,6 +28,7 @@
 #include <qtest.h>
 #include <QtQml/qqmlengine.h>
 #include <QtQml/qqmlcomponent.h>
+#include <QtQml/qqmlprivate.h>
 #include <QtQml/qqmlincubator.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qfile.h>
@@ -146,6 +147,7 @@ private slots:
     void aliasProperties();
     void aliasPropertiesAndSignals();
     void aliasPropertyChangeSignals();
+    void qtbug_89822();
     void componentCompositeType();
     void i18n();
     void i18n_data();
@@ -335,6 +337,13 @@ private slots:
     void bareInlineComponent();
 
     void hangOnWarning();
+
+    void ambiguousContainingType();
+    void staticConstexprMembers();
+    void bindingAliasToComponentUrl();
+    void badGroupedProperty();
+
+    void objectAsBroken();
 
 private:
     QQmlEngine engine;
@@ -2143,6 +2152,22 @@ void tst_qqmllanguage::aliasProperties()
         QCOMPARE(subItem->property("y").toInt(), 1);
     }
 
+    // Nested property bindings on group properties that are actually aliases (QTBUG-94983)
+    {
+        QQmlComponent component(&engine, testFileUrl("alias.15a.qml"));
+        VERIFY_ERRORS(0);
+
+        QScopedPointer<QObject> object(component.create());
+        QVERIFY(!object.isNull());
+
+        QPointer<QObject> subItem = qvariant_cast<QObject*>(object->property("symbol"));
+        QVERIFY(!subItem.isNull());
+
+        QPointer<QObject> subSubItem = qvariant_cast<QObject*>(subItem->property("layer"));
+
+        QCOMPARE(subSubItem->property("enabled").value<bool>(), true);
+    }
+
     // Alias to sub-object with binding (QTBUG-57041)
     {
         // This is shold *not* crash.
@@ -2230,6 +2255,12 @@ void tst_qqmllanguage::aliasPropertiesAndSignals()
     QScopedPointer<QObject> o(component.create());
     QVERIFY(o);
     QCOMPARE(o->property("test").toBool(), true);
+}
+
+void tst_qqmllanguage::qtbug_89822()
+{
+    QQmlComponent component(&engine, testFileUrl("qtbug_89822.qml"));
+    VERIFY_ERRORS("qtbug_89822.errors.txt");
 }
 
 // Test that the root element in a composite type can be a Component
@@ -5851,6 +5882,93 @@ void tst_qqmllanguage::hangOnWarning()
     QQmlComponent component(&engine, testFileUrl("hangOnWarning.qml"));
     QScopedPointer<QObject> object(component.create());
     QVERIFY(object != nullptr);
+}
+
+void tst_qqmllanguage::ambiguousContainingType()
+{
+    // Need to do it twice, so that we load from disk cache the second time.
+    for (int i = 0; i < 2; ++i) {
+        QQmlEngine engine;
+
+        // Should not crash when loading the type
+        QQmlComponent c(&engine, testFileUrl("ambiguousBinding/ambiguousContainingType.qml"));
+        QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+        QScopedPointer<QObject> o(c.create());
+        QVERIFY(!o.isNull());
+    }
+}
+ void tst_qqmllanguage::staticConstexprMembers() {
+     // this tests if the symbols are correclty defined for c++11 (gcc 11 and 12), and should
+     // not have any linker errors
+     using T = QObject;
+     using T2 = QObject;
+
+     auto f1 = QQmlPrivate::Constructors<T, true>::createSingletonInstance;
+     auto f2 = QQmlPrivate::Constructors<T, false>::createSingletonInstance;
+     auto f3 = QQmlPrivate::Constructors<T, true>::createInto;
+
+     auto f4 = QQmlPrivate::ExtendedType<T, true>::createParent;
+     auto f5 = QQmlPrivate::ExtendedType<T, false>::createParent;
+     auto f6 = QQmlPrivate::ExtendedType<T, true>::staticMetaObject;
+
+     auto f7 = QQmlPrivate::QmlSingleton<T, T2>::Value;
+
+     Q_UNUSED(f1);
+     Q_UNUSED(f2);
+     Q_UNUSED(f3);
+     Q_UNUSED(f3);
+     Q_UNUSED(f4);
+     Q_UNUSED(f5);
+     Q_UNUSED(f6);
+     Q_UNUSED(f7);
+ }
+
+void tst_qqmllanguage::bindingAliasToComponentUrl()
+{
+    QQmlEngine engine;
+    {
+        QQmlComponent component(&engine, testFileUrl("bindingAliasToComponentUrl.qml"));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.create());
+        QVERIFY(object);
+        QCOMPARE(object->property("accessibleNormalUrl"), object->property("urlClone"));
+    }
+    {
+        QQmlComponent component(&engine, testFileUrl("bindingAliasToComponentUrl2.qml"));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> object(component.create());
+        QVERIFY(object);
+        QCOMPARE(object->property("accessibleNormalProgress"), QVariant(1.0));
+    }
+}
+
+void tst_qqmllanguage::badGroupedProperty()
+{
+    QQmlEngine engine;
+    const QUrl url = testFileUrl("badGroupedProperty.qml");
+    QQmlComponent c(&engine, url);
+    QVERIFY(c.isError());
+    QCOMPARE(c.errorString(),
+             QStringLiteral("%1:6 Cannot assign to non-existent property \"onComplete\"\n")
+             .arg(url.toString()));
+}
+
+void tst_qqmllanguage::objectAsBroken()
+{
+    QQmlEngine engine;
+    QQmlComponent c(&engine, testFileUrl("asBroken.qml"));
+    QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+    QScopedPointer<QObject> o(c.create());
+    QVERIFY(!o.isNull());
+    QVariant selfAsBroken = o->property("selfAsBroken");
+    QVERIFY(selfAsBroken.isValid());
+
+    // 5.15 doesn't enforce type annotation. So the "as" cast succeeds even though
+    // the target type cannot be resolved.
+    QCOMPARE(selfAsBroken.value<QObject *>(), o.data());
+
+    QQmlComponent b(&engine, testFileUrl("Broken.qml"));
+    QVERIFY(b.isError());
 }
 
 QTEST_MAIN(tst_qqmllanguage)

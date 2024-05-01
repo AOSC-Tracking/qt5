@@ -60,8 +60,7 @@ QGeoRoutingManagerEngineNokia::QGeoRoutingManagerEngineNokia(
     Q_ASSERT(networkManager);
     m_networkManager->setParent(this);
 
-    m_appId = parameters.value(QStringLiteral("here.app_id")).toString();
-    m_token = parameters.value(QStringLiteral("here.token")).toString();
+    m_apiKey = parameters.value(QStringLiteral("here.apiKey")).toString();
 
     QGeoRouteRequest::FeatureTypes featureTypes;
     featureTypes |= QGeoRouteRequest::TollFeature;
@@ -219,18 +218,16 @@ QStringList QGeoRoutingManagerEngineNokia::calculateRouteRequestString(const QGe
         return QStringList();
     QStringList requests;
 
-    QString baseRequest = QStringLiteral("http://");
+    QString baseRequest = QStringLiteral("https://");
     baseRequest += m_uriProvider->getCurrentHost();
     baseRequest += QStringLiteral("/routing/7.2/calculateroute.xml");
 
     baseRequest += QStringLiteral("?alternatives=");
     baseRequest += QString::number(request.numberAlternativeRoutes());
 
-    if (!m_appId.isEmpty() && !m_token.isEmpty()) {
-        baseRequest += QStringLiteral("&app_id=");
-        baseRequest += m_appId;
-        baseRequest += QStringLiteral("&token=");
-        baseRequest += m_token;
+    if (!m_apiKey.isEmpty()) {
+        baseRequest += QStringLiteral("&apiKey=");
+        baseRequest += m_apiKey;
     }
 
     const QList<QVariantMap> metadata = request.waypointsMetadata();
@@ -281,7 +278,7 @@ QStringList QGeoRoutingManagerEngineNokia::updateRouteRequestString(const QGeoRo
         return QStringList();
     QStringList requests;
 
-    QString baseRequest = "http://";
+    QString baseRequest = "https://";
     baseRequest += m_uriProvider->getCurrentHost();
     baseRequest += "/routing/7.2/getroute.xml";
 

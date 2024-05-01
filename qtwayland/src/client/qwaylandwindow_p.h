@@ -98,6 +98,9 @@ public:
     QWaylandWindow(QWindow *window, QWaylandDisplay *display);
     ~QWaylandWindow() override;
 
+    // Keep Toplevels position on the top left corner of their screen
+    static inline bool fixedToplevelPositions = true;
+
     virtual WindowType windowType() const = 0;
     virtual void ensureSize();
     WId winId() const override;
@@ -155,7 +158,7 @@ public:
 
     void setMask(const QRegion &region) override;
 
-    int scale() const;
+    qreal scale() const;
     qreal devicePixelRatio() const override;
 
     void requestActivateWindow() override;
@@ -207,6 +210,10 @@ public:
     void handleUpdate();
     void deliverUpdateRequest() override;
 
+    void addChildPopup(QWaylandWindow* child);
+    void removeChildPopup(QWaylandWindow* child);
+    void closeChildPopups();
+
 public slots:
     void applyConfigure();
 
@@ -216,7 +223,11 @@ signals:
 
 protected:
     QWaylandDisplay *mDisplay = nullptr;
+
+    // mSurface can be written by the main thread. Other threads should claim a read lock for access
+    mutable QReadWriteLock mSurfaceLock;
     QScopedPointer<QWaylandSurface> mSurface;
+
     QWaylandShellSurface *mShellSurface = nullptr;
     QWaylandSubSurface *mSubSurfaceWindow = nullptr;
     QVector<QWaylandSubSurface *> mChildren;
@@ -226,12 +237,13 @@ protected:
     Qt::MouseButtons mMousePressedInContentArea = Qt::NoButton;
 
     WId mWindowId;
-    bool mWaitingForFrameCallback = false;
     bool mFrameCallbackTimedOut = false; // Whether the frame callback has timed out
-    QAtomicInt mWaitingForUpdateDelivery = false;
     int mFrameCallbackCheckIntervalTimerId = -1;
-    QElapsedTimer mFrameCallbackElapsedTimer;
-    struct ::wl_callback *mFrameCallback = nullptr;
+    QAtomicInt mWaitingForUpdateDelivery = false;
+
+    bool mWaitingForFrameCallback = false; // Protected by mFrameSyncMutex
+    QElapsedTimer mFrameCallbackElapsedTimer; // Protected by mFrameSyncMutex
+    struct ::wl_callback *mFrameCallback = nullptr; // Protected by mFrameSyncMutex
     QMutex mFrameSyncMutex;
     QWaitCondition mFrameSyncWait;
 
@@ -262,6 +274,8 @@ protected:
     QWaylandBuffer *mQueuedBuffer = nullptr;
     QRegion mQueuedBufferDamage;
 
+    QList<QPointer<QWaylandWindow>> mChildPopups;
+
 private:
     void setGeometry_helper(const QRect &rect);
     void initWindow();
@@ -284,11 +298,9 @@ private:
     QRect mLastExposeGeometry;
 
     static const wl_callback_listener callbackListener;
-    void handleFrameCallback();
+    void handleFrameCallback(struct ::wl_callback* callback);
 
     static QWaylandWindow *mMouseGrab;
-
-    QReadWriteLock mSurfaceLock;
 
     friend class QWaylandSubSurface;
 };

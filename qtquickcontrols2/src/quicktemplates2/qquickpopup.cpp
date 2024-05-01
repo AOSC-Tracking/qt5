@@ -46,6 +46,7 @@
 
 #include <QtQml/qqmlinfo.h>
 #include <QtQuick/qquickitem.h>
+#include <QtQuick/private/qquickaccessibleattached_p.h>
 #include <QtQuick/private/qquicktransition_p.h>
 #include <QtQuick/private/qquickitem_p.h>
 
@@ -456,6 +457,9 @@ bool QQuickPopupPrivate::prepareEnterTransition()
         popupItem->setVisible(true);
         getPositioner()->setParentItem(parentItem);
         emit q->visibleChanged();
+
+        if (focus)
+            popupItem->setFocus(true);
     }
     return true;
 }
@@ -489,8 +493,6 @@ bool QQuickPopupPrivate::prepareExitTransition()
 void QQuickPopupPrivate::finalizeEnterTransition()
 {
     Q_Q(QQuickPopup);
-    if (focus)
-        popupItem->setFocus(true);
     transitionState = NoTransition;
     getPositioner()->reposition();
     emit q->openedChanged();
@@ -513,13 +515,14 @@ void QQuickPopupPrivate::finalizeExitTransition()
         if (QQuickOverlay *overlay = QQuickOverlay::overlay(window)) {
             const auto stackingOrderPopups = QQuickOverlayPrivate::get(overlay)->stackingOrderPopups();
             for (auto popup : stackingOrderPopups) {
-                if (QQuickPopupPrivate::get(popup)->transitionState != ExitTransition) {
+                if (QQuickPopupPrivate::get(popup)->transitionState != ExitTransition
+                         && popup->hasFocus()) {
                     nextFocusPopup = popup;
                     break;
                 }
             }
         }
-        if (nextFocusPopup && nextFocusPopup->hasFocus()) {
+        if (nextFocusPopup) {
             nextFocusPopup->forceActiveFocus();
         } else {
             QQuickApplicationWindow *applicationWindow = qobject_cast<QQuickApplicationWindow*>(window);
@@ -2718,6 +2721,19 @@ QPalette QQuickPopup::defaultPalette() const
 }
 
 #if QT_CONFIG(accessibility)
+QAccessible::Role QQuickPopup::effectiveAccessibleRole() const
+{
+    auto *attached = qmlAttachedPropertiesObject<QQuickAccessibleAttached>(this, false);
+
+    auto role = QAccessible::NoRole;
+    if (auto *accessibleAttached = qobject_cast<QQuickAccessibleAttached *>(attached))
+        role = accessibleAttached->role();
+    if (role == QAccessible::NoRole)
+        role = accessibleRole();
+
+    return role;
+}
+
 QAccessible::Role QQuickPopup::accessibleRole() const
 {
     return QAccessible::Dialog;

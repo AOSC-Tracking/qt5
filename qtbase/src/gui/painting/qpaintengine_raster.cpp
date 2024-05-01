@@ -3069,10 +3069,10 @@ QRasterPaintEnginePrivate::getPenFunc(const QRectF &rect,
 static QPair<int, int> visibleGlyphRange(const QRectF &clip, QFontEngine *fontEngine,
                                          glyph_t *glyphs, QFixedPoint *positions, int numGlyphs)
 {
-    QFixed clipLeft = QFixed::fromReal(clip.left());
-    QFixed clipRight = QFixed::fromReal(clip.right());
-    QFixed clipTop = QFixed::fromReal(clip.top());
-    QFixed clipBottom = QFixed::fromReal(clip.bottom());
+    QFixed clipLeft = QFixed::fromReal(clip.left() - 1);
+    QFixed clipRight = QFixed::fromReal(clip.right() + 1);
+    QFixed clipTop = QFixed::fromReal(clip.top() - 1);
+    QFixed clipBottom = QFixed::fromReal(clip.bottom() + 1);
 
     int first = 0;
     while (first < numGlyphs) {
@@ -3288,6 +3288,11 @@ void QRasterPaintEnginePrivate::rasterizeLine_dashed(QLineF line,
 
     qreal length = line.length();
     Q_ASSERT(length > 0);
+    if (length / (patternLength * width) > QDashStroker::repetitionLimit()) {
+        rasterizer->rasterizeLine(line.p1(), line.p2(), width / length, squareCap);
+        return;
+    }
+
     while (length > 0) {
         const bool rasterize = *inDash;
         qreal dash = (pattern.at(*dashIndex) - *dashOffset) * width;
@@ -3457,16 +3462,18 @@ void QRasterPaintEngine::drawBitmap(const QPointF &pos, const QImage &image, QSp
     // Boundaries
     int w = image.width();
     int h = image.height();
-    int ymax = qMin(qRound(pos.y() + h), d->rasterBuffer->height());
-    int ymin = qMax(qRound(pos.y()), 0);
-    int xmax = qMin(qRound(pos.x() + w), d->rasterBuffer->width());
-    int xmin = qMax(qRound(pos.x()), 0);
+    int px = qRound(pos.x());
+    int py = qRound(pos.y());
+    int ymax = qMin(py + h, d->rasterBuffer->height());
+    int ymin = qMax(py, 0);
+    int xmax = qMin(px + w, d->rasterBuffer->width());
+    int xmin = qMax(px, 0);
 
-    int x_offset = xmin - qRound(pos.x());
+    int x_offset = xmin - px;
 
     QImage::Format format = image.format();
     for (int y = ymin; y < ymax; ++y) {
-        const uchar *src = image.scanLine(y - qRound(pos.y()));
+        const uchar *src = image.scanLine(y - py);
         if (format == QImage::Format_MonoLSB) {
             for (int x = 0; x < xmax - xmin; ++x) {
                 int src_x = x + x_offset;
@@ -3554,7 +3561,7 @@ QRasterPaintEngine::ClipType QRasterPaintEngine::clipType() const
     \internal
     Returns the bounding rect of the currently set clip.
 */
-QRect QRasterPaintEngine::clipBoundingRect() const
+QRectF QRasterPaintEngine::clipBoundingRect() const
 {
     Q_D(const QRasterPaintEngine);
 
@@ -3566,7 +3573,7 @@ QRect QRasterPaintEngine::clipBoundingRect() const
     if (clip->hasRectClip)
         return clip->clipRect;
 
-    return QRect(clip->xmin, clip->ymin, clip->xmax - clip->xmin, clip->ymax - clip->ymin);
+    return QRectF(clip->xmin, clip->ymin, clip->xmax - clip->xmin, clip->ymax - clip->ymin);
 }
 
 void QRasterPaintEnginePrivate::initializeRasterizer(QSpanData *data)
@@ -3855,7 +3862,7 @@ void QClipData::initialize()
         return;
 
     if (!m_clipLines)
-        m_clipLines = (ClipLine *)calloc(sizeof(ClipLine), clipSpanHeight);
+        m_clipLines = (ClipLine *)calloc(clipSpanHeight, sizeof(ClipLine));
 
     Q_CHECK_PTR(m_clipLines);
     QT_TRY {

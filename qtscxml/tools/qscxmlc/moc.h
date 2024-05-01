@@ -33,6 +33,8 @@
 #include <QtCore/qpair.h>
 #include <QtCore/qjsondocument.h>
 #include <QtCore/qjsonarray.h>
+#include <QtCore/private/qtools_p.h>
+
 #include <ctype.h>
 
 QT_BEGIN_NAMESPACE
@@ -123,7 +125,7 @@ struct PropertyDef
     Specification gspec;
     bool stdCppSet() const {
         QByteArray s("set");
-        s += toupper(name[0]);
+        s += QtMiscUtils::toAsciiUpper(name[0]);
         s += name.mid(1);
         return (s == write);
     }

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2020 The Qt Company Ltd.
+** Copyright (C) 2022 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
@@ -1778,7 +1778,8 @@ void tst_QLocale::toDateTime_data()
     QTest::addColumn<QDateTime>("result");
     QTest::addColumn<QString>("format");
     QTest::addColumn<QString>("string");
-    QTest::addColumn<bool>("clean"); // No non-format letters in format string
+    // No non-format letters in format string, no time-zone (t format):
+    QTest::addColumn<bool>("clean");
 
     QTest::newRow("1C") << "C" << QDateTime(QDate(1974, 12, 1), QTime(5, 14, 0))
                         << "d/M/yyyy hh:h:mm" << "1/12/1974 05:5:14" << true;
@@ -1831,6 +1832,21 @@ void tst_QLocale::toDateTime_data()
                              << "d'dd'd/MMM'M'/yysss" << "1dd1/des.M/74033" << false;
     QTest::newRow("12no_NO") << "no_NO" << QDateTime(QDate(1974, 12, 1), QTime(15, 0, 0))
                              << "d'd'dd/M/yyh" << "1d01/12/7415" << false;
+
+    QTest::newRow("short-ss") // QTBUG-102199: trips over an assert in CET
+        << "C" << QDateTime() // Single-digit seconds does not match ss format.
+        << QStringLiteral("ddd, d MMM yyyy HH:mm:ss")
+        << QStringLiteral("Sun, 29 Mar 2020 02:26:3") << true;
+
+    QTest::newRow("short-ss-Z") // Same, but with a valid date-time:
+        << "C" << QDateTime()
+        << QStringLiteral("ddd, d MMM yyyy HH:mm:ss t")
+        << QStringLiteral("Sun, 29 Mar 2020 02:26:3 Z") << false;
+
+    QTest::newRow("s-Z") // Same, but with a format that accepts the single digit:
+        << "C" << QDateTime(QDate(2020, 3, 29), QTime(2, 26, 3), Qt::UTC)
+        << QStringLiteral("ddd, d MMM yyyy HH:mm:s t")
+        << QStringLiteral("Sun, 29 Mar 2020 02:26:3 Z") << false;
 
     QTest::newRow("RFC-1123")
         << "C" << QDateTime(QDate(2007, 11, 1), QTime(18, 8, 30))
@@ -2092,8 +2108,7 @@ void tst_QLocale::windowsDefaultLocale()
     QCOMPARE(locale.toString(QDate(1974, 12, 1), QLocale::NarrowFormat),
              locale.toString(QDate(1974, 12, 1), QLocale::ShortFormat));
     QCOMPARE(locale.toString(QDate(1974, 12, 1), QLocale::LongFormat), QString("1@12@1974"));
-    const QString expectedFormattedShortTimeSeconds = QStringLiteral("1^2^3");
-    const QString expectedFormattedShortTime = QStringLiteral("1^2");
+    const QString expectedFormattedShortTime = QStringLiteral("1^2^3");
     QCOMPARE(locale.toString(QTime(1,2,3), QLocale::ShortFormat), expectedFormattedShortTime);
     QCOMPARE(locale.toString(QTime(1,2,3), QLocale::NarrowFormat),
              locale.toString(QTime(1,2,3), QLocale::ShortFormat));
@@ -2477,6 +2492,10 @@ void tst_QLocale::dateFormat()
 
     const QLocale ir("ga_IE");
     QCOMPARE(ir.dateFormat(QLocale::ShortFormat), QLatin1String("dd/MM/yyyy"));
+
+    const auto sys = QLocale::system(); // QTBUG-92018, ru_RU on MS
+    const QDate date(2021, 3, 17);
+    QCOMPARE(sys.toString(date, sys.dateFormat(QLocale::LongFormat)), sys.toString(date));
 }
 
 void tst_QLocale::timeFormat()
@@ -2535,18 +2554,21 @@ void tst_QLocale::monthName()
     // 'de' locale doesn't have narrow month name
     QCOMPARE(de.monthName(12, QLocale::NarrowFormat), QLatin1String("D"));
 
-    QLocale ru("ru_RU");
+    const QLocale ru("ru_RU");
     QCOMPARE(ru.monthName(1, QLocale::LongFormat),
              QString::fromUtf8("\321\217\320\275\320\262\320\260\321\200\321\217"));
     QCOMPARE(ru.monthName(1, QLocale::ShortFormat),
              QString::fromUtf8("\321\217\320\275\320\262\56"));
     QCOMPARE(ru.monthName(1, QLocale::NarrowFormat), QString::fromUtf8("\320\257"));
+    const auto sys = QLocale::system();
+    if (sys.language() == QLocale::Russian) // QTBUG-92018
+        QVERIFY(sys.monthName(3) != sys.standaloneMonthName(3));
 
-    QLocale ir("ga_IE");
+    const QLocale ir("ga_IE");
     QCOMPARE(ir.monthName(1, QLocale::ShortFormat), QLatin1String("Ean"));
     QCOMPARE(ir.monthName(12, QLocale::ShortFormat), QLatin1String("Noll"));
 
-    QLocale cz("cs_CZ");
+    const QLocale cz("cs_CZ");
     QCOMPARE(cz.monthName(1, QLocale::ShortFormat), QLatin1String("led"));
     QCOMPARE(cz.monthName(12, QLocale::ShortFormat), QLatin1String("pro"));
 }
@@ -2983,12 +3005,17 @@ void tst_QLocale::bcp47Name()
 class MySystemLocale : public QSystemLocale
 {
 public:
-    MySystemLocale(const QLocale &locale) : m_locale(locale)
+    MySystemLocale(const QString &locale) : m_name(locale), m_locale(locale)
     {
     }
 
-    QVariant query(QueryType /*type*/, QVariant /*in*/) const override
+    QVariant query(QueryType type, QVariant /*in*/) const override
     {
+        if (type == UILanguages) {
+            if (m_name == u"en-DE") // QTBUG-104930: simulate macOS's list not including m_name.
+                return QVariant(QStringList{QStringLiteral("en-GB"), QStringLiteral("de-DE")});
+            return QVariant(QStringList{m_name});
+        }
         return QVariant();
     }
 
@@ -2998,16 +3025,38 @@ public:
     }
 
 private:
+    const QString m_name;
     const QLocale m_locale;
 };
 
 void tst_QLocale::systemLocale_data()
 {
+    // Test uses MySystemLocale, so is platform-independent.
     QTest::addColumn<QString>("name");
     QTest::addColumn<QLocale::Language>("language");
-    QTest::addRow("catalan") << QString("ca") << QLocale::Catalan;
-    QTest::addRow("ukrainian") << QString("uk") << QLocale::Ukrainian;
-    QTest::addRow("german") << QString("de") << QLocale::German;
+    QTest::addColumn<QStringList>("uiLanguages");
+
+    QTest::addRow("catalan")
+        << QString("ca") << QLocale::Catalan
+        << QStringList{QStringLiteral("ca"), QStringLiteral("ca-ES"), QStringLiteral("ca-Latn-ES")};
+    QTest::addRow("ukrainian")
+        << QString("uk") << QLocale::Ukrainian
+        << QStringList{QStringLiteral("uk"), QStringLiteral("uk-UA"), QStringLiteral("uk-Cyrl-UA")};
+    QTest::addRow("english-germany")
+        << QString("en-DE") << QLocale::English
+        // First two were missed out before fix to QTBUG-104930:
+        << QStringList{QStringLiteral("en-DE"), QStringLiteral("en-Latn-DE"),
+                       QStringLiteral("en-GB"), QStringLiteral("en-Latn-GB"),
+                       QStringLiteral("de-DE"), QStringLiteral("de"), QStringLiteral("de-Latn-DE")};
+    QTest::addRow("german")
+        << QString("de") << QLocale::German
+        << QStringList{QStringLiteral("de"), QStringLiteral("de-DE"), QStringLiteral("de-Latn-DE")};
+    QTest::addRow("chinese-min")
+        << QString("zh") << QLocale::Chinese
+        << QStringList{QStringLiteral("zh"), QStringLiteral("zh-CN"), QStringLiteral("zh-Hans-CN")};
+    QTest::addRow("chinese-full")
+        << QString("zh-Hans-CN") << QLocale::Chinese
+        << QStringList{QStringLiteral("zh-Hans-CN"), QStringLiteral("zh"), QStringLiteral("zh-CN")};
 }
 
 void tst_QLocale::systemLocale()
@@ -3017,11 +3066,17 @@ void tst_QLocale::systemLocale()
 
     QFETCH(QString, name);
     QFETCH(QLocale::Language, language);
+    QFETCH(QStringList, uiLanguages);
 
     {
         MySystemLocale sLocale(name);
         QCOMPARE(QLocale().language(), language);
         QCOMPARE(QLocale::system().language(), language);
+        auto reporter = qScopeGuard([]() {
+            qDebug("\n\t%s", qPrintable(QLocale::system().uiLanguages().join(u"\n\t")));
+        });
+        QCOMPARE(QLocale::system().uiLanguages(), uiLanguages);
+        reporter.dismiss();
     }
 
     QCOMPARE(QLocale(), originalLocale);
