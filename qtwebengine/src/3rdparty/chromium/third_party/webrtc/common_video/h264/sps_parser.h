@@ -12,6 +12,7 @@
 #define COMMON_VIDEO_H264_SPS_PARSER_H_
 
 #include "absl/types/optional.h"
+#include <cstdint>
 
 namespace rtc {
 class BitBuffer;

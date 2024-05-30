@@ -566,7 +566,7 @@ config("compiler") {
       # Override Chromium's default for projects that wish to stay on C++11.
       cflags_cc += [ "-std=${standard_prefix}++11" ]
     } else {
-      cflags_cc += [ "-std=${standard_prefix}++14" ]
+      cflags_cc += [ "-std=${standard_prefix}++17" ]
     }
   } else if (!is_win && !is_nacl) {
     if (target_os == "android") {
