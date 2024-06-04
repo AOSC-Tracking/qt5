@@ -105,6 +105,7 @@ static_library("browser") {
     "//components/keyed_service/core",
     "//components/prefs",
     "//components/query_parser",
+    "//components/signin/public/base:signin_buildflags",
     "//components/signin/public/identity_manager",
     "//components/sync",
     "//components/url_formatter",

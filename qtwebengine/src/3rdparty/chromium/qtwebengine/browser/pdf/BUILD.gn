@@ -6,6 +6,7 @@ source_set("pdf") {
   ]
 
   deps = [
+    "//chrome/app:generated_resources",
     "//content/public/browser",
   ]
 }

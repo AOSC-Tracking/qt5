@@ -469,6 +469,7 @@ jumbo_source_set("browser_sources") {
     "//build:chromeos_buildflags",
     "//cc",
     "//components/viz/host",
+    "//components/spellcheck:buildflags",
     "//content/browser",  # Must not be public_deps!
     "//device/fido",
     "//gpu",
